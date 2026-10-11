@@ -1,86 +1,176 @@
-#include "campaign.h"
-static void Assign(GameState *g, int role, int n)
+#include "game.h"
+#include "sim/ai.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+typedef struct
 {
-    char why[128];
-    GameCommandApply(g, (GameCommand){CMD_ASSIGN, role, n, 0}, why, sizeof(why));
-}
-static void Build(GameState *g, int type, int x, int y)
+    uint64_t tick, treaty, military;
+} Checkpoint;
+static const Checkpoint checkpoints[] = {
+#include "fixtures/rts-checkpoints.inc"
+};
+static bool Baseline(const GameState *g, bool military, bool record)
 {
-    char why[128];
-    GameCommandApply(g, (GameCommand){CMD_BUILD, type, x, y}, why, sizeof(why));
+    uint64_t hash = GameHash(g);
+    if (record)
+    {
+        printf("baseline %llu %016llx\n", (unsigned long long)g->tick, (unsigned long long)hash);
+        return true;
+    }
+    for (unsigned i = 0; i < sizeof(checkpoints) / sizeof(checkpoints[0]); i++)
+        if (checkpoints[i].tick == g->tick)
+        {
+            uint64_t expected = military ? checkpoints[i].military : checkpoints[i].treaty;
+            if (hash == expected)
+                return true;
+            fprintf(stderr, "Campaign baseline differs at tick %llu: got %016llx, expected %016llx\n",
+                    (unsigned long long)g->tick, (unsigned long long)hash, (unsigned long long)expected);
+            return false;
+        }
+    return true;
 }
-void CampaignOrders(GameState *g)
+// Test-only player: every intervention is a normal validated command. No stock,
+// population, health, discovery, or clock shortcuts are used in this campaign.
+static bool Command(GameState *g, GameCommand c)
+{
+    return GameCommandApply(g, c, NULL, 0);
+}
+static void Player(GameState *g, bool military)
 {
     if (g->tick % 100)
         return;
-    if (g->tick == 0)
+    AiEconomy(g, 0);
+    if (g->tick < 6000)
+        for (int i = 0; i < g->citizenCount; i++)
+        {
+            Citizen *c = &g->citizens[i];
+            if (c->alive && !c->owner && (c->role == HUNTER || c->role == FORAGER))
+                Command(g, (GameCommand){.type = CMD_ROLE, .a = WOODCUTTER, .entity = GameCitizenRef(g, i)});
+        }
+    // Allow one raid to steal supplies before negotiating; keep subsequent
+    // development peaceful until the offensive campaign deliberately resumes.
+    bool raided = g->factions[0].exported[FOOD] > 0 || g->factions[0].deaths > 0;
+    if (raided && (!military || g->tick < 60000) && g->truceUntil <= (int)g->tick && !g->treaty)
+        Command(g, (GameCommand){.type = CMD_TRUCE});
+    if (g->factions[0].age == BRONZE_AGE)
     {
-        char why[128];
-        GameCommandApply(g, (GameCommand){CMD_TRUCE, 0, 0, 0}, why, sizeof(why));
-        Assign(g, FORAGER, 0);
-        Assign(g, HUNTER, 0);
-    }
-    if (g->tick == 2000)
-    {
-        Assign(g, FORAGER, 2);
-        Assign(g, HUNTER, 1);
-    }
-    int shelters = GameBuildingCount(g, SHELTER, false);
-    const int sites[][2] = {{18, 18}, {18, 21}, {18, 24}, {21, 26}, {24, 26}, {21, 17}, {24, 17}, {16, 16},
-                            {16, 23}, {16, 25}, {20, 29}, {23, 29}, {16, 30}, {20, 31}, {23, 31}, {25, 15}};
-    if (shelters < 6)
-        Build(g, SHELTER, sites[shelters][0], sites[shelters][1]);
-    if (!GameBuildingCount(g, WORKSHOP, false) && shelters >= 2)
-        Build(g, WORKSHOP, 24, 19);
-    if (!GameBuildingCount(g, FORAGING_POST, false) && shelters >= 2)
-        Build(g, FORAGING_POST, 16, 29);
-    if (!GameBuildingCount(g, HUNTING_CAMP, false) && shelters >= 3)
-        Build(g, HUNTING_CAMP, 18, 32);
-    if (g->tick > 2100 && !GameRoleCount(g, CRAFTER) && GameRoleCount(g, IDLE))
-        Assign(g, CRAFTER, 1);
-    if (g->tick > 2500 && GameRoleCount(g, BUILDER) > 1)
-        Assign(g, BUILDER, 1);
-    if (g->tick > 2600 && GameRoleCount(g, WOODCUTTER) < 2 && GameRoleCount(g, IDLE))
-        Assign(g, WOODCUTTER, 2);
-    if (g->research < 0 && GameBuildingCount(g, WORKSHOP, true) && GameRoleCount(g, CRAFTER))
-    {
-        int idea = !g->discovery[IMPROVED_TOOLS]                     ? IMPROVED_TOOLS
-                   : !g->discovery[INSULATION]                       ? INSULATION
-                   : !g->discovery[FOOD_STORAGE]                     ? FOOD_STORAGE
-                   : !g->discovery[FARMING] && g->tick >= WINTER_END ? FARMING
-                                                                     : -1;
-        char why[128];
-        if (idea >= 0)
-            GameCommandApply(g, (GameCommand){CMD_RESEARCH, idea, 0, 0}, why, sizeof(why));
-    }
-    if (g->discovery[INSULATION])
-        for (int i = 0; i < g->buildingCount; i++)
-            if (g->buildings[i].type == SHELTER && g->buildings[i].complete && !g->buildings[i].upgraded)
-            {
-                char why[128];
-                GameCommandApply(g, (GameCommand){CMD_UPGRADE, i, 0, 0}, why, sizeof(why));
-                break;
-            }
-    if (g->discovery[FOOD_STORAGE] && !GameBuildingCount(g, GRANARY, false))
-        Build(g, GRANARY, 25, 22);
-    if (g->discovery[FARMING])
-    {
-        int farms = GameBuildingCount(g, FARM, false);
-        if (farms < 4)
-            Build(g, FARM, 28, 17 + farms * 3);
-    }
-    if (g->tick > ARRIVAL_FIRST && GameRoleCount(g, IDLE))
-    {
-        if (g->discovery[FARMING] && GameRoleCount(g, FARMER) < 2)
-            Assign(g, FARMER, GameRoleCount(g, FARMER) + 1);
-        else if (GameRoleCount(g, GUARD) < 4)
-            Assign(g, GUARD, GameRoleCount(g, GUARD) + 1);
+        Command(g, (GameCommand){.type = CMD_BUILD, .a = WATCH_POST, .b = 38, .c = 38});
+        Command(g, (GameCommand){.type = CMD_BUILD, .a = WATCH_POST, .b = 56, .c = 56});
+        if (!military)
+            Command(g, (GameCommand){.type = CMD_TREATY});
         else
-            Assign(g, FORAGER, GameRoleCount(g, FORAGER) + 1);
+        {
+            int school = -1, army = 0;
+            for (int b = 0; b < g->buildingCount; b++)
+                if (g->buildings[b].alive && !g->buildings[b].owner &&
+                    g->buildings[b].type == TRAINING_GROUND && g->buildings[b].complete)
+                    school = b;
+            for (int i = 0; i < g->citizenCount; i++)
+                army += g->citizens[i].alive && !g->citizens[i].owner &&
+                        (g->citizens[i].unitType || g->citizens[i].training >= 0);
+            if (school >= 0 && army < 20)
+                for (int i = g->citizenCount - 1; i >= 0; i--)
+                {
+                    Citizen *c = &g->citizens[i];
+                    if (c->alive && !c->owner && !c->unitType && c->training < 0 && c->role != BUILDER)
+                    {
+                        Command(g, (GameCommand){.type = CMD_TRAIN,
+                                                 .a = AXEMAN,
+                                                 .entity = GameCitizenRef(g, i),
+                                                 .order = {.target = GameBuildingRef(g, school)}});
+                        break;
+                    }
+                }
+            int target = g->factions[1].center;
+            if (school >= 0 && target >= 0)
+                for (int i = 0; i < g->citizenCount; i++)
+                {
+                    Citizen *c = &g->citizens[i];
+                    if (!c->alive || c->owner || !c->unitType || c->training >= 0)
+                        continue;
+                    if (!c->equipped && g->tick < 72000)
+                        Command(g, (GameCommand){.type = CMD_EQUIP,
+                                                 .entity = GameCitizenRef(g, i),
+                                                 .order = {.target = GameBuildingRef(g, school)}});
+                    if (g->tick >= 72000 && g->truceUntil <= (int)g->tick && c->hp > 700 &&
+                        (!c->orderCount || c->orders[0].type != ORDER_ATTACK))
+                        Command(g, (GameCommand){.type = CMD_ORDER,
+                                                 .entity = GameCitizenRef(g, i),
+                                                 .order = {.type = ORDER_ATTACK,
+                                                           .targetKind = TARGET_BUILDING,
+                                                           .target = GameBuildingRef(g, target),
+                                                           .x = g->buildings[target].x,
+                                                           .y = g->buildings[target].y}});
+                }
+        }
     }
-    if (g->raidWarning && !g->raidResolved)
+}
+int main(int argc, char **argv)
+{
+    bool military = argc > 1 && !strcmp(argv[1], "military");
+    bool record = argc > 2 && !strcmp(argv[2], "--record-baseline");
+    GameState *g = calloc(1, sizeof(*g));
+    GameInit(g);
+    bool baselineOK = Baseline(g, military, record);
+    double accumulator = 0;
+    char why[256], file[128];
+    snprintf(file, sizeof(file), "evidence/%s-campaign.gfv2", military ? "military" : "treaty");
+    int lowestHP = 1000;
+    uint64_t midHash = 0;
+    for (int frame = 0; frame < 108000 && !g->lost && !g->won; frame++)
     {
-        char why[128];
-        GameCommandApply(g, (GameCommand){CMD_TRUCE, 0, 0, 0}, why, sizeof(why));
+        Player(g, military);
+        GameAdvance(g, .1, 1, &accumulator);
+        for (int i = 0; i < g->citizenCount; i++)
+            if (g->citizens[i].alive && !g->citizens[i].owner && g->citizens[i].hp < lowestHP)
+                lowestHP = g->citizens[i].hp;
+        if (g->tick == 45000)
+        {
+            if (!GameSave(g, file, why, sizeof(why)))
+            {
+                puts(why);
+                return 1;
+            }
+            midHash = GameHash(g);
+            if (!GameLoad(g, file, why, sizeof(why)) || GameHash(g) != midHash)
+            {
+                puts("Mid-campaign continuation failed");
+                return 1;
+            }
+        }
+        if (g->tick % 6000 == 0)
+        {
+            baselineOK = Baseline(g, military, record) && baselineOK;
+            printf("%s min=%llu pop=%d age=%d village=%d sites=%d raids=%d food=%d bronze=%d lost=%d\n",
+                   military ? "military" : "treaty", g->tick / 600, GamePopulation(g), GameStage(g),
+                   g->factions[0].village, GameSiteControl(g, 0), g->factions[1].raidCount,
+                   g->factions[0].stock[FOOD], g->factions[0].stock[BRONZE], g->lost);
+            fflush(stdout);
+            if (!GameValidate(g, why, sizeof(why)))
+            {
+                puts(why);
+                return 1;
+            }
+        }
     }
+    Faction *f = &g->factions[0];
+    printf("result won=%d lost=%d time=%.2f village=%.2f population=%d shortage recoveries=%d lowestHP=%d "
+           "raids=%d exports=%d hash=%016llx\n",
+           g->won, g->lost, g->tick / 600., f->villageTick / 600., GamePopulation(g), f->shortageRecoveries,
+           lowestHP, g->factions[1].raidCount, f->exported[FOOD], (unsigned long long)GameHash(g));
+    bool valid = GameValidate(g, why, sizeof(why));
+    if (!valid)
+        puts(why);
+    bool ok = baselineOK && valid && g->won && !g->lost && g->tick >= 72000 && g->tick <= 108000 &&
+              f->villageTick >= 27000 && f->villageTick <= 36000 && f->shortageRecoveries > 0 &&
+              lowestHP < 1000 && g->factions[1].raidCount > 0 && f->exported[FOOD] > 0 &&
+              (military ? g->factions[1].defeated : g->treaty);
+    if (!GameSave(g, file, why, sizeof(why)))
+    {
+        puts(why);
+        ok = false;
+    }
+    free(g);
+    return ok ? 0 : 1;
 }

@@ -1,15 +1,18 @@
 #include "game_view.h"
-#include "view/context.h"
-#include "view/widgets.h"
-#include "view/assets.h"
-#include "view/world.h"
-#include "view/panels.h"
-#include "view/hud.h"
 #include "view/actions.h"
-#include "view/screens.h"
+#include "view/assets.h"
+#include "view/context.h"
+#include "view/hud.h"
 #include "view/input.h"
+#include "view/layout.h"
+#include "view/panels.h"
+#include "view/screens.h"
+#include "view/selection.h"
+#include "view/widgets.h"
+#include "view/world.h"
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static void Draw(ViewContext *ui)
@@ -17,16 +20,19 @@ static void Draw(ViewContext *ui)
     BeginTextureMode(ui->canvas);
     ClearBackground(INK);
     BeginMode2D((Camera2D){.zoom = RENDER_SCALE});
-    DrawRectangleGradientV(0, 86, PANEL_X, SCREEN_H - 250, (Color){114, 140, 131, 255},
+    DrawRectangleGradientV(0, WORLD_TOP, SCREEN_W, SCREEN_H - WORLD_TOP, (Color){114, 140, 131, 255},
                            (Color){71, 98, 78, 255});
     EndMode2D();
     ViewWorldDraw(ui);
     BeginMode2D((Camera2D){.zoom = RENDER_SCALE});
+    ui->clickConsumed = false;
     ui->allowInput = !ui->menu && !ui->help && !ui->g->lost && (!ui->g->won || ui->winSeen);
     ViewHeader(ui);
+    ui->allowInput =
+        !ui->menu && !ui->help && !ViewPanelOpen(ui) && !ui->g->lost && (!ui->g->won || ui->winSeen);
+    ViewSelectionDraw(ui);
     ViewWorldHUD(ui);
     ViewPanelDraw(ui);
-    ViewBuildPalette(ui);
     if (ui->menu)
         ViewMenu(ui);
     if (ui->help)
@@ -50,6 +56,8 @@ int GameViewRun(GameState *game, int argc, char **argv, bool returning)
 {
     const char *capture = NULL, *load = NULL;
     bool play = false;
+    int capturePanel = -1, captureBuild = -1, captureBuilding = -1, benchmarkFrames = 0;
+    bool captureOverview = false, captureSelection = false, captureSoldiers = false;
     for (int i = 1; i < argc; i++)
     {
         if (!strcmp(argv[i], "--play"))
@@ -58,12 +66,29 @@ int GameViewRun(GameState *game, int argc, char **argv, bool returning)
             capture = argv[++i];
         else if (!strcmp(argv[i], "--load") && i + 1 < argc)
             load = argv[++i];
+        else if (!strcmp(argv[i], "--capture-panel") && i + 1 < argc)
+            capturePanel = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--capture-building") && i + 1 < argc)
+            captureBuilding = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--capture-build") && i + 1 < argc)
+            captureBuild = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--capture-overview"))
+            captureOverview = true;
+        else if (!strcmp(argv[i], "--capture-soldiers"))
+            captureSoldiers = true;
+        else if (!strcmp(argv[i], "--capture-selection"))
+            captureSelection = true;
+        else if (!strcmp(argv[i], "--benchmark-frames") && i + 1 < argc)
+            benchmarkFrames = atoi(argv[++i]);
         else
         {
             fprintf(stderr, "Unknown or incomplete option: %s\n", argv[i]);
             return 2 + 1;
         }
     }
+    if (capturePanel < -1 || capturePanel > 4 || captureBuilding < -1 || captureBuilding >= BUILDING_COUNT ||
+        captureBuild < -1 || captureBuild >= BUILDING_COUNT || benchmarkFrames < 0 || benchmarkFrames > 36000)
+        return 3;
     // Owned here for the entire view session, including Reference Viewer returns.
     // Modules receive this context explicitly and hold no mutable global UI state.
     static ViewContext context;
@@ -74,14 +99,17 @@ int GameViewRun(GameState *game, int argc, char **argv, bool returning)
     ui->g = game;
     ui->selected = ui->selectedCitizen = ui->build = ui->areaRole = ui->hoverTile = -1;
     ui->speed = ui->lastSpeed = 1;
+    ui->panel = -1;
     ui->menu = !play && !capture;
-    ui->camera =
-        (Camera2D){.offset = {PANEL_X / 2.0f, 421}, .target = ViewIso(23, 23), .rotation = 0, .zoom = .86f};
+    ui->camera = (Camera2D){.offset = {SCREEN_W / 2.0f, (WORLD_TOP + SCREEN_H) / 2.0f},
+                            .target = ViewIso(23, 23),
+                            .rotation = 0,
+                            .zoom = .86f};
     ViewSaveFolder(ui);
     SetTraceLogLevel(LOG_WARNING);
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_HIGHDPI |
                    (capture ? FLAG_WINDOW_HIDDEN : FLAG_VSYNC_HINT));
-    InitWindow(1440, 900, "Greenfield - Founding a Tribe");
+    InitWindow(1440, 900, "Greenfield - Tribe to Country");
     if (!IsWindowReady())
         return 1;
     SetExitKey(KEY_NULL);
@@ -98,7 +126,8 @@ int GameViewRun(GameState *game, int argc, char **argv, bool returning)
     int result = 0;
     if (!assetsReady)
     {
-        fprintf(stderr, "The game artwork, fonts, or render target could not be loaded. Keep assets beside the executable.\n");
+        fprintf(stderr, "The game artwork, fonts, or render target could not be loaded. Keep assets beside "
+                        "the executable.\n");
         result = 1;
         ui->quit = true;
     }
@@ -119,7 +148,34 @@ int GameViewRun(GameState *game, int argc, char **argv, bool returning)
     ui->lastAutosave = game->tick;
     ui->winSeen = game->won;
     if (capture)
+    {
         ui->toastTime = 0;
+        ui->panel = capturePanel == 4 ? -1 : capturePanel;
+        ui->build = captureBuild;
+        if (captureOverview)
+        {
+            ui->camera.target = ViewIso(48, 48);
+            ui->camera.zoom = .16f;
+        }
+        ui->buildMenu = captureBuild >= 0;
+        if (captureSelection || captureSoldiers || captureBuild >= 0)
+            for (int i = 0; i < game->citizenCount && ui->selectionCount < 8; i++)
+                if (game->citizens[i].alive && !game->citizens[i].owner &&
+                    (!captureSoldiers || game->citizens[i].unitType))
+                    ui->selection[ui->selectionCount++] = GameCitizenRef(game, i);
+        if (captureBuilding >= 0)
+            for (int i = 0; i < game->buildingCount; i++)
+                if (game->buildings[i].alive && !game->buildings[i].owner &&
+                    game->buildings[i].type == captureBuilding)
+                {
+                    ViewSelectBuilding(ui, i);
+                    break;
+                }
+        if (benchmarkFrames)
+            SetTargetFPS(0);
+    }
+    int rendered = 0;
+    double renderTotal = 0, renderMax = 0;
     while (!WindowShouldClose() && !ui->quit && !ui->reference)
     {
         double frameSeconds = GetFrameTime();
@@ -132,19 +188,38 @@ int GameViewRun(GameState *game, int argc, char **argv, bool returning)
         float scale = ViewMinF(GetScreenWidth() / (float)SCREEN_W, GetScreenHeight() / (float)SCREEN_H);
         Vector2 raw = GetMousePosition();
         ui->mouse = (Vector2){(raw.x - (GetScreenWidth() - SCREEN_W * scale) / 2) / scale,
-                             (raw.y - (GetScreenHeight() - SCREEN_H * scale) / 2) / scale};
+                              (raw.y - (GetScreenHeight() - SCREEN_H * scale) / 2) / scale};
         Vector2 tile = ViewTileAt(ui, ui->mouse);
         ui->hoverTile = GameTile((int)floorf(tile.x), (int)floorf(tile.y));
-        ViewInput(ui, dt);
+        if (!capture)
+            ViewInput(ui, dt);
+        else if (captureBuild >= 0)
+            ui->hoverTile = GameTile(26, 27);
+        if (capture && benchmarkFrames)
+            GameAdvance(game, 1.0 / 60, 1, &ui->accumulator);
         if (!ui->menu && !ui->help && !game->lost && (!game->won || ui->winSeen) && !capture)
         {
             GameAdvance(game, frameSeconds, ui->speed, &ui->accumulator);
             if (!ui->autosaveBlocked && game->tick - ui->lastAutosave >= 1200)
                 ViewSave(ui);
         }
+        double renderStart = GetTime();
         Draw(ui);
+        double elapsed = GetTime() - renderStart;
+        if (rendered >= 10)
+        {
+            renderTotal += elapsed;
+            renderMax = fmax(renderMax, elapsed);
+        }
+        rendered++;
         if (capture)
         {
+            if (rendered < benchmarkFrames)
+                continue;
+            if (benchmarkFrames > 10)
+                printf("Render benchmark: %d frames, %.2f ms mean, %.2f ms max; %d living citizens.\n",
+                       rendered - 10, 1000 * renderTotal / (rendered - 10), renderMax * 1000,
+                       GamePopulationFor(game, 0) + GamePopulationFor(game, 1));
             Image img = LoadImageFromTexture(ui->canvas.texture);
             ImageFlipVertical(&img);
             result = ExportImage(img, capture) ? 0 : 1;

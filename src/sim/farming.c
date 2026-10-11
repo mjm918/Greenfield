@@ -15,13 +15,19 @@ void FarmingWork(GameState *g, Citizen *c)
     {
         if (c->job == JOB_PLANT)
         {
+            if (g->factions[c->owner].stock[WOOD] < 2)
+            {
+                JobsReset(c);
+                return;
+            }
+            EconomySpend(g, c->owner, WOOD, 2);
             b->crop = 1;
             b->cropProgress = 0;
             JobsReset(c);
         }
         else
         {
-            EconomyProduceBatch(g, c, FOOD, 24);
+            EconomyProduceBatch(g, c, FOOD, g->factions[c->owner].discovery[CROP_YIELD] ? 48 : 24);
             c->harvestCargo = 1;
             b->crop = 0;
             b->cropProgress = 0;
@@ -37,7 +43,7 @@ void FarmingUpdate(GameState *g)
     for (int i = 0; i < g->buildingCount; i++)
     {
         Building *b = &g->buildings[i];
-        if (b->type == FARM && b->complete && b->crop == 1 && g->tick >= WINTER_END)
+        if (b->alive && b->type == FARM && b->complete && b->crop == 1 && g->tick >= WINTER_END)
         {
             if (++b->cropProgress >= 2400)
                 b->crop = 2;

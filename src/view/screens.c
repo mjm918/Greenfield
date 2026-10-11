@@ -12,17 +12,23 @@ void ViewMenu(ViewContext *ui)
     ViewRounded(card, (Color){35, 48, 39, 255});
     ViewBorder(card, Fade(ACCENT, .45f));
     ViewLabel(ui, "A GREENFIELD CHRONICLE", 503, 180);
-    ViewTitle(ui, "Founding a Tribe", 501, 215, 42, PAPER);
-    ViewWrapText(ui, "The ice is retreating. Your story begins with eight people and the warmth of a single fire.",
-             503, 279, 429, 17, MUTED);
+    ViewTitle(ui, "From Tribe to Country", 501, 215, 33, PAPER);
+    ViewWrapText(
+        ui, "The ice is retreating. Your story begins with eight people and the warmth of a single fire.",
+        503, 279, 429, 17, MUTED);
     if (ui->confirmNew)
     {
-        ViewWrapText(ui,
-            "Begin a new village? Your saved slot stays intact until you save or the next autosave runs.",
+        ViewWrapText(
+            ui, "Begin a new village? Your saved slot stays intact until you save or the next autosave runs.",
             503, 382, 427, 17, PAPER);
         if (ViewButton(ui, (Rectangle){503, 480, 427, 47}, "Begin a new village", true, true))
         {
             GameInit(ui->g);
+            ui->selectionCount = 0;
+            ui->orderMode = 0;
+            ui->dragging = false;
+            for (int i = 0; i < 10; i++)
+                ui->groupCount[i] = 0;
             ui->menu = false;
             ui->confirmNew = false;
             ui->winSeen = false;
@@ -33,14 +39,16 @@ void ViewMenu(ViewContext *ui)
             ui->autosaveBlocked = false;
             ui->camera.target = ViewIso(23, 23);
             ui->camera.zoom = .86f;
-            ui->panel = 0;
+            ui->panel = -1;
+            ui->buildMenu = false;
+            ui->commandPage = 0;
         }
         if (ViewButton(ui, (Rectangle){503, 542, 427, 43}, "Back", false, true))
             ui->confirmNew = false;
         return;
     }
-    if (ViewButton(ui, (Rectangle){503, 364, 427, 47}, ui->g->tick ? "Resume village" : "Begin your story", true,
-               !ui->g->lost))
+    if (ViewButton(ui, (Rectangle){503, 364, 427, 47}, ui->g->tick ? "Resume village" : "Begin your story",
+                   true, !ui->g->lost))
     {
         ui->menu = false;
         ui->speed = ui->lastSpeed;
@@ -65,13 +73,14 @@ void ViewMenu(ViewContext *ui)
     if (ViewButton(ui, (Rectangle){723, 587, 207, 41}, "Quit", false, true))
         ui->quit = true;
     ViewLabel(ui, "SINGLE PLAYER    /    OFFLINE    /    ONE LOCAL SAVE", 503, 664);
-    ViewWrapText(ui, ui->toastTime > 0 ? ui->toast
-             : ui->autosaveBlocked
-                 ? "Autosave paused after a load error. Load a usable save or explicitly "
-                   "save this village to resume autosaving."
-                 : "Autosaves every two minutes of simulation time. New villages reach their "
-                   "first chapter in about 45-60 minutes at 1x.",
-             503, 692, 426, 14, MUTED);
+    ViewWrapText(ui,
+                 ui->toastTime > 0 ? ui->toast
+                 : ui->autosaveBlocked
+                     ? "Autosave paused after a load error. Load a usable save or explicitly "
+                       "save this village to resume autosaving."
+                     : "Autosaves every two minutes of simulation time. New villages reach their "
+                       "first chapter in about 45-60 minutes at 1x.",
+                 503, 692, 426, 14, MUTED);
 }
 
 void ViewGuide(ViewContext *ui)
@@ -84,28 +93,28 @@ void ViewGuide(ViewContext *ui)
     const char *headings[] = {"01 / Shelter & survival", "02 / Work & deliveries", "03 / Discover & grow",
                               "04 / Share the valley"};
     const char *copy[] = {
-        "Build two shelters for your eight founders. The hearth burns one wood every 20 seconds in winter. "
-        "Everyone eats one food per minute. Shortages warn you before hunger or cold begins to harm health. "
-        "Food and warmth restore health.",
-        "Assign roles in Workforce. Reduce a role to free people, then add them elsewhere. Workers walk to "
-        "resources, work and carry goods to storage. Construction costs are paid once, when placed. A "
-        "blocked route is retried when the path opens.",
-        "Build a workshop and assign a crafter. Discover better tools, insulation and storage. After the "
-        "twelve-minute winter, discover Farming. Build on fertile river soil and assign farmers. Travelers "
-        "arrive when you have spare beds and a food reserve.",
-        "Raid warnings give 90 seconds to prepare. Guards defend near the rally flag; a watch post moves the "
-        "rally. Pay 40 food for twelve minutes of truce. Secure a harvest, 20 people, beds and three days of "
-        "food to found your village."};
+        "Select workers and press B to build shelters. Keep the hearth supplied. Everyone needs food and a "
+        "bed, including soldiers. The "
+        "opening winter lasts twelve minutes. Shortages warn before harm; restored supplies allow recovery.",
+        "Drag to select citizens. Right-click resources or buildings to work, build, repair or deliver. "
+        "Shift queues orders. Ctrl+number creates groups. Recruit adults at the center; build housing before "
+        "the queue fills.",
+        "Upgrade the communal center after winter. Staff a workshop to discover cultivation and storage, "
+        "then advance to Farming Village. Research metallurgy, mine ore and staff a smelter to unlock the "
+        "Bronze Age.",
+        "Train citizens at a training ground. A attack-moves, D defends, X holds, T retreats, L plunders. "
+        "Rival supplies and workers are real. Secure both marked sites and house 50 people with food "
+        "reserves; sign a treaty or destroy their center."};
     for (int i = 0; i < 4; i++)
     {
         float x = 290 + (i % 2) * 455, y = 240 + (i / 2) * 205;
         ViewText(ui, headings[i], x, y, 21, ACCENT);
         ViewWrapText(ui, copy[i], x, y + 40, 401, 16, PAPER);
     }
-    ViewText(ui, "Space pause   1/2/4 speed   B build   W workers   R discoveries   O objectives", 290, 693, 16,
-         MUTED);
-    ViewText(ui, "Wheel zoom   Right drag / arrows pan   Home recenter   M whole valley   G grid", 290, 720, 16,
-         MUTED);
+    ViewText(ui, "Space pause   F1/F2/F3 speed   B construction   W workers   R discoveries   O objectives",
+             290, 693, 16, MUTED);
+    ViewText(ui, "Wheel zoom   Middle drag / arrows pan   Home recenter   M whole valley   G grid", 290, 720,
+             16, MUTED);
     ViewText(ui, "F5 save   F9 load   Esc menu or cancel   F fullscreen", 290, 747, 16, MUTED);
     if (ViewButton(ui, (Rectangle){974, 740, 173, 41}, "Back to the valley", true, true))
         ui->help = false;
@@ -117,13 +126,15 @@ void ViewEnding(ViewContext *ui)
     DrawRectangle(0, 0, SCREEN_W, SCREEN_H, Fade(INK, .83f));
     ui->allowInput = true;
     ViewRounded((Rectangle){414, 241, 612, 399}, (Color){35, 48, 39, 255});
-    ViewLabel(ui, g->lost ? "THE FIRE HAS GONE OUT" : "CHAPTER ONE COMPLETE", 463, 281);
-    ViewTitle(ui, g->lost ? "A quiet valley" : "A village is born", 459, 326, 43, PAPER);
-    ViewWrapText(ui, g->lost ? "No one remains to tend the hearth. You can return to your last save, or lead a new "
+    ViewLabel(ui, g->lost ? "THE FIRE HAS GONE OUT" : "A COUNTRY IS FOUNDED", 463, 281);
+    ViewTitle(ui, g->lost ? "A quiet valley" : "The valley is home", 459, 326, 43, PAPER);
+    ViewWrapText(ui,
+                 g->lost
+                     ? "No one remains to tend the hearth. You can return to your last save, or lead a new "
                        "tribe into the valley."
                      : "Your people have survived the cold, raised a harvest and made a home. The story is "
                        "yours to continue.",
-             463, 396, 511, 19, MUTED);
+                 463, 396, 511, 19, MUTED);
     if (!g->lost && ViewButton(ui, (Rectangle){463, 527, 513, 49}, "Continue building", true, true))
     {
         ui->winSeen = true;
@@ -136,11 +147,19 @@ void ViewEnding(ViewContext *ui)
         if (ViewButton(ui, (Rectangle){728, 527, 248, 49}, "Restart", false, true))
         {
             GameInit(g);
+            ui->selectionCount = 0;
+            ui->orderMode = 0;
+            ui->dragging = false;
+            for (int i = 0; i < 10; i++)
+                ui->groupCount[i] = 0;
             ui->speed = 1;
             ui->winSeen = false;
             ui->lastAutosave = 0;
             ui->autosaveBlocked = false;
-            ui->selected = ui->selectedCitizen = -1;
+            ui->selected = ui->selectedCitizen = ui->build = -1;
+            ui->panel = -1;
+            ui->buildMenu = false;
+            ui->commandPage = 0;
         }
     }
 }

@@ -1,4 +1,4 @@
-# Pre-refactor simulation baseline
+# Historical version-1 baseline (retained, not executed)
 
 These fixtures were captured from commit
 `b1fbbc9e1f4cef9322f4aa05ad67ef3e35918ea1` using its `GameInit`, `GameTick`,
@@ -24,7 +24,40 @@ SHA-256:
 34783bdd72e42e9d9ecefe4941d45f5b85c09fa3c71b3407ec68f52f74ed4d12  campaign-checkpoints.inc
 ```
 
-`test_baseline.c` loads each original save and compares subsequent checkpoints,
-as well as replaying from a new game. The fixtures are read-only inputs. They do
+The former `test_baseline.c` loaded these saves and replayed their original checkpoints.
+That runner is retired with the single-faction rules; it cannot compile against the
+country state and does not establish version-2 correctness. The fixtures are read-only inputs. They do
 not replace or access the player's save. Preserve them during structural changes;
 an intentional gameplay change needs an explicit explanation of affected baselines.
+
+
+# Country version-2 baseline
+
+`rts-checkpoints.inc` was recorded on 2026-10-11 from the intentional country
+expansion based on `a7b4253`, using the new `GameInit`, `GameAdvance`, canonical
+serializer and `tests/campaign.c`. The source is not yet committed. Routine rival construction/research/recovery events do not masquerade as player
+notifications, and the first-harvest event is emitted only once. These intentional
+event-log changes are part of the new full-state baseline. Each row is
+`{tick, treaty_hash, military_hash}`. It covers initialization and ten-minute
+checkpoints through minute 120 for each campaign (26 full-state expectations).
+Campaigns also validate the ending and round-trip a save at minute 75.
+
+The scripts use identical economic commands until the military scenario builds
+its army in Bronze. They issue ordinary game commands and never inject stock,
+population, health, discoveries or objective completion. The deliberate early
+food shortage and the first enemy theft exercise recovery. Country completion
+must remain within 120–180 simulated minutes, with the village at 45–60 minutes.
+
+Both normal CTest campaigns enforce these hashes. For a deliberate rule change,
+review its semantic assertions first, then record candidate hashes explicitly:
+
+```sh
+cd build
+./game_campaign treaty --record-baseline > evidence/treaty-baseline.log
+./game_campaign military --record-baseline > evidence/military-baseline.log
+```
+
+Recording writes candidates to stdout, never changes this fixture automatically.
+Explain the changed rules and inspect both campaigns before replacing expectations.
+UI rendering changes need not change simulation hashes. There is intentionally no
+v1 migration or comparison against the old refactor hashes.

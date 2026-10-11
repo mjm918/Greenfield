@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(greenfield VERSION 1.0.0 LANGUAGES C)
+project(greenfield VERSION 2.0.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -22,7 +22,7 @@ target_compile_definitions(raylib PRIVATE
 
 set(GREENFIELD_VIEW_SOURCES
     src/view/actions.c src/view/assets.c src/view/hud.c src/view/input.c
-    src/view/panels.c src/view/screens.c src/view/widgets.c src/view/world.c)
+    src/view/panels.c src/view/selection.c src/view/screens.c src/view/widgets.c src/view/world.c)
 add_executable(greenfield src/main.c src/reference.c src/game_view.c ${GREENFIELD_VIEW_SOURCES})
 target_link_libraries(greenfield PRIVATE raylib greenfield_sim)
 if(NOT MSVC)
@@ -71,34 +71,33 @@ add_library(greenfield_sim STATIC
     src/game.c src/save.c
     src/sim/definitions.c src/sim/validation.c src/sim/world.c
     src/sim/citizens.c src/sim/buildings.c src/sim/economy.c src/sim/jobs.c
-    src/sim/workshop.c src/sim/farming.c src/sim/survival.c src/sim/rivals.c)
+    src/sim/workshop.c src/sim/farming.c src/sim/survival.c src/sim/rivals.c
+    src/sim/orders.c src/sim/production.c src/sim/progression.c src/sim/combat.c src/sim/ai.c)
 target_include_directories(greenfield_sim PUBLIC src)
 if(NOT MSVC)
     target_compile_options(greenfield_sim PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 if(BUILD_TESTING)
-    add_executable(game_tests tests/test_game.c tests/campaign.c tests/test_support.c
-        tests/sim/test_construction.c tests/sim/test_economy.c tests/sim/test_survival.c
-        tests/sim/test_farming.c tests/sim/test_rivals.c tests/sim/test_persistence.c
-        tests/sim/test_determinism.c tests/sim/test_validation.c tests/sim/test_sandbox.c)
-    target_include_directories(game_tests PRIVATE tests)
-    if(NOT MSVC)
-        target_compile_options(game_tests PRIVATE -Wall -Wextra -Wpedantic)
-    endif()
+    add_executable(game_tests tests/rts_tests.c)
     target_link_libraries(game_tests PRIVATE greenfield_sim)
+    target_compile_definitions(game_tests PRIVATE
+        OLD_SAVE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/campaign-5000.gfv1")
     add_test(NAME simulation COMMAND game_tests)
-    add_test(NAME balanced_campaign COMMAND game_tests --campaign)
-    add_executable(game_baseline_tests tests/test_baseline.c tests/campaign.c)
-    target_link_libraries(game_baseline_tests PRIVATE greenfield_sim)
-    target_compile_definitions(game_baseline_tests PRIVATE
-        FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
-    add_test(NAME simulation_baseline COMMAND game_baseline_tests)
+    add_executable(game_campaign tests/campaign.c)
+    target_link_libraries(game_campaign PRIVATE greenfield_sim)
+    add_test(NAME treaty_campaign COMMAND game_campaign treaty)
+    add_test(NAME military_campaign COMMAND game_campaign military)
+    add_executable(game_capacity_tests tests/test_capacity.c)
+    target_link_libraries(game_capacity_tests PRIVATE greenfield_sim)
+    add_test(NAME population_capacity COMMAND game_capacity_tests)
     # Exercise the same input/command adapters with controlled input, without
     # opening a window or sending events to the player's running game.
-    add_executable(game_view_tests tests/test_view.c tests/test_support.c tests/campaign.c
+    add_executable(game_view_tests tests/test_view.c
         ${GREENFIELD_VIEW_SOURCES})
     target_link_libraries(game_view_tests PRIVATE raylib greenfield_sim)
     target_compile_definitions(game_view_tests PRIVATE
+        VIEW_TEST_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/"
+        GetApplicationDirectory=TestApplicationDirectory
         IsKeyPressed=TestKeyPressed IsKeyDown=TestKeyDown
         IsMouseButtonPressed=TestMousePressed IsMouseButtonDown=TestMouseDown
         GetMouseWheelMove=TestMouseWheel GetMouseDelta=TestMouseDelta
@@ -109,24 +108,27 @@ if(BUILD_TESTING)
         target_link_libraries(game_view_tests PRIVATE m)
     endif()
     add_test(NAME view_input COMMAND game_view_tests)
+    add_test(NAME hud_interactions COMMAND game_view_tests --render)
 endif()
 
 add_custom_command(TARGET greenfield POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/bronze-atlas.png"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/settlement-atlas.png"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-atlas.png"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-atlas.png"
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/AtkinsonHyperlegible-Regular.ttf"
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/AtkinsonHyperlegible-Bold.ttf"
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/AtkinsonHyperlegible-LICENSE.txt"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceSans3-Regular.ttf"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceSans3-Semibold.ttf"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceSans3-LICENSE.md"
         "$<TARGET_FILE_DIR:greenfield>/assets")
 set_property(TARGET greenfield APPEND PROPERTY LINK_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/bronze-atlas.png"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/settlement-atlas.png"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-atlas.png"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-atlas.png"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/AtkinsonHyperlegible-Regular.ttf"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/AtkinsonHyperlegible-Bold.ttf"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/AtkinsonHyperlegible-LICENSE.txt")
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceSans3-Regular.ttf"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceSans3-Semibold.ttf"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceSans3-LICENSE.md")
 if(BUILD_TESTING)
     add_executable(game_art_tests tests/test_art.c)
     target_link_libraries(game_art_tests PRIVATE raylib)
@@ -136,6 +138,7 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/settlement-atlas.png"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-atlas.png"
         "${CMAKE_BINARY_DIR}/evidence/game-winter.png"
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-atlas.png")
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-atlas.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/bronze-atlas.png")
     set_tests_properties(pixel_art PROPERTIES FIXTURES_REQUIRED game_image)
 endif()

@@ -4,10 +4,22 @@
 #include <stdio.h>
 
 // Private scalar helpers. Random state belongs exclusively to GameState.
-static inline int Min(int a, int b) { return a < b ? a : b; }
-static inline int Max(int a, int b) { return a > b ? a : b; }
-static inline int Abs(int a) { return a < 0 ? -a : a; }
-static inline int Dist(int x, int y, int a, int b) { return Abs(x - a) + Abs(y - b); }
+static inline int Min(int a, int b)
+{
+    return a < b ? a : b;
+}
+static inline int Max(int a, int b)
+{
+    return a > b ? a : b;
+}
+static inline int Abs(int a)
+{
+    return a < 0 ? -a : a;
+}
+static inline int Dist(int x, int y, int a, int b)
+{
+    return Abs(x - a) + Abs(y - b);
+}
 static inline bool Reject(char *r, int n, const char *s)
 {
     if (r && n > 0)

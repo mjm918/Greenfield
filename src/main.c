@@ -10,13 +10,19 @@ int main(int argc, char **argv)
             return ReferenceMain(argc, argv);
     if (argc > 1 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h")))
     {
-        puts("Greenfield - Founding a Tribe\n  --play                      Begin a new village\n  --load "
+        puts("Greenfield - Tribe to Country\n  --play                      Begin a new campaign\n  --load "
              "PATH                 Load a specific local save\n  --game-capture PATH         Capture the "
              "playable scene and exit\n  --reference                 Open the original cleaned "
              "illustration\n  --capture PATH --time SEC   Capture the animated reference\n  --verify "
-             "DIRECTORY         Verify reference fidelity\n\nIn game: Space pause, 1/2/4 speed, B build, W "
-             "workforce, R discoveries,\nO objectives, Esc menu, wheel zoom, right-drag / arrows pan, Home "
-             "recenter.\nF5 save, F9 load, F fullscreen. Click objects to inspect.");
+             "DIRECTORY         Verify reference fidelity\n"
+             "Capture options: --capture-panel 0..4, --capture-overview, --capture-selection,\n"
+             "--capture-build 0..12, --capture-building 0..12, --capture-soldiers, --benchmark-frames N "
+             "(with --game-capture).\n\n"
+             "Space pause, F1/F2/F3 speed, Ctrl+number save group, number recall group.\n"
+             "Drag selects, Shift queues, right-click orders, middle-drag / arrows pan.\n"
+             "A attack-move, D defend, X hold, T retreat, L plunder, S stop.\n"
+             "B worker construction, W workforce, R discoveries, O objectives, H help, Esc menu.\n"
+             "Wheel zoom, Home recenter, M full map, F5 save, F9 load, F fullscreen.");
         return 0;
     }
     GameState *game = calloc(1, sizeof(*game));

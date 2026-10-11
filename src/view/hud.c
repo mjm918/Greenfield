@@ -1,96 +1,76 @@
 #include "hud.h"
+#include "actions.h"
 #include "assets.h"
-#include "context.h"
+#include "layout.h"
 #include "raymath.h"
 #include "widgets.h"
 #include "world.h"
-#include <stdio.h>
+#include <math.h>
 
+bool ViewHasWarning(const ViewContext *ui)
+{
+    const GameState *g = ui->g;
+    return g->factions[0].foodWarning || g->factions[0].coldWarning || g->factions[1].raidWarning ||
+           g->factions[1].raidActive || GameHousing(g) < GamePopulation(g) || ui->autosaveBlocked;
+}
+bool ViewWorldPointHit(const ViewContext *ui, Vector2 point)
+{
+    return !ViewPanelOpen(ui) && CheckCollisionPointRec(point, ViewWorldRect()) &&
+           !CheckCollisionPointRec(point, ViewObjectiveRect()) &&
+           !CheckCollisionPointRec(point, ViewSelectionRect(ui)) &&
+           !CheckCollisionPointRec(point, ViewMapRect()) &&
+           !CheckCollisionPointRec(point, ViewProductionRect(ui)) &&
+           !(ui->orderMode && CheckCollisionPointRec(point, ViewOrderHintRect())) &&
+           !(ViewHasWarning(ui) && CheckCollisionPointRec(point, ViewWarningRect()));
+}
+bool ViewWorldHit(ViewContext *ui)
+{
+    return ViewWorldPointHit(ui, ui->mouse);
+}
+
+static void ResourceIcon(ViewContext *ui, int r, Vector2 foot)
+{
+    const int icons[] = {14, 2, 13, 4, 5, 13, 5};
+    ViewSprite(ui->objects, icons[r], foot, 23,
+               r == ORE      ? (Color){211, 143, 89, 255}
+               : r == BRONZE ? ACCENT
+                             : WHITE,
+               false);
+}
 void ViewHeader(ViewContext *ui)
 {
     GameState *g = ui->g;
-    DrawRectangle(0, 0, SCREEN_W, 86, (Color){31, 43, 35, 255});
-    DrawLine(0, 85, SCREEN_W, 85, (Color){78, 89, 66, 255});
-    ViewTitle(ui, "GREENFIELD", 24, 12, 30, PAPER);
-    ViewLabel(ui, "FOUNDING A TRIBE", 27, 48);
-    const int icons[] = {14, 2, 13, 4, 5};
+    Faction *f = &g->factions[0];
+    DrawRectangle(0, 0, SCREEN_W, WORLD_TOP, (Color){28, 39, 33, 255});
+    DrawLine(0, WORLD_TOP - 1, SCREEN_W, WORLD_TOP - 1, Fade(ACCENT, .35f));
     for (int r = 0; r < RESOURCE_COUNT; r++)
     {
-        float x = 234 + r * 133;
-        ViewSprite(ui->objects, icons[r], (Vector2){x + 18, 57}, 30, WHITE, false);
-        ViewText(ui, TextFormat("%d", g->stock[r]), x + 40, 21, 22, PAPER);
-        ViewLabel(ui, RESOURCE_NAMES[r], x + 41, 49);
-        if (r == FOOD && g->foodWarning)
-            DrawCircle((int)(x + 105), 28, 3, RUST);
+        float x = 14 + r * 78;
+        ResourceIcon(ui, r, (Vector2){x + 12, 36});
+        ViewTitle(ui,
+                  f->stock[r] >= 1000000 ? TextFormat("%.1fm", f->stock[r] / 1000000.f)
+                  : f->stock[r] >= 10000 ? TextFormat("%.0fk", f->stock[r] / 1000.f)
+                                         : TextFormat("%d", f->stock[r]),
+                  x + 30, 11, 20, r == FOOD && f->foodWarning ? ACCENT : PAPER);
     }
-    DrawLine(918, 18, 918, 65, Fade(MUTED, .25f));
-    ViewText(ui, TextFormat("%d / %d", GamePopulation(g), GameHousing(g)), 943, 20, 22, PAPER);
-    ViewLabel(ui, "PEOPLE / BEDS", 944, 49);
-    ViewText(ui, TextFormat("Day %llu", (unsigned long long)(g->tick / DAY_TICKS + 1)), 1088, 18, 20, PAPER);
-    ViewText(ui, g->tick < WINTER_END ? "Deep winter"
-         : ViewSnow(ui) > .1f       ? "The thaw"
-                              : "Growing season",
-         1088, 45, 14, g->tick < WINTER_END ? (Color){169, 204, 210, 255} : SAGE);
-    if (ViewButton(ui, (Rectangle){1307, 23, 109, 38}, "Menu  Esc", false, true))
-        ui->menu = true;
-}
-
-void ViewBuildPalette(ViewContext *ui)
-{
-    DrawRectangle(0, SCREEN_H - 164, PANEL_X, 164, (Color){31, 43, 35, 255});
-    DrawLine(0, SCREEN_H - 164, PANEL_X, SCREEN_H - 164, (Color){92, 102, 74, 255});
-    ViewLabel(ui, "BUILD A HOME, ONE PLACE AT A TIME", 24, SCREEN_H - 146);
-    const char *shortNames[] = {"Hearth",  "Shelter", "Stockpile",  "Forage post", "Hunting", "Workshop",
-                                "Granary", "Farm",    "Watch post", "Palisade",    "Gate"};
-    for (int i = 0; i < BUILDING_COUNT; i++)
-    {
-        Rectangle r = {22 + i * 99, SCREEN_H - 119, 91, 85};
-        bool selected = ui->build == i, hover = ViewHit(ui, r);
-        ViewRounded(r, selected ? (Color){82, 99, 65, 255}
-                   : hover  ? (Color){59, 72, 53, 255}
-                            : (Color){43, 56, 43, 255});
-        ViewBorder(r, selected ? ACCENT : Fade(MUTED, .22f));
-        ViewSprite(ui->objects, i, (Vector2){r.x + 45, r.y + 53}, i == WATCH_POST ? 35 : 51, WHITE, false);
-        float width = MeasureTextEx(ui->font, shortNames[i], 14, 0.5f).x;
-        ViewText(ui, shortNames[i], r.x + (91 - width) / 2, r.y + 62, 14, PAPER);
-        bool locked =
-            (i == FARM && !ui->g->discovery[FARMING]) || (i == GRANARY && !ui->g->discovery[FOOD_STORAGE]);
-        if (locked)
-            ViewText(ui, "*", r.x + 77, r.y + 7, 16, ACCENT);
-        if (ViewClick(ui, r))
-        {
-            ui->build = selected ? -1 : i;
-            ui->areaRole = -1;
-        }
-        if (hover && ui->allowInput && ui->build < 0)
-        {
-            ViewRounded((Rectangle){22, SCREEN_H - 237, 670, 63}, INK);
-            ViewText(ui, BUILDINGS[i].description, 38, SCREEN_H - 225, 16, PAPER);
-            ViewCost(ui, BUILDINGS[i].cost, 38, SCREEN_H - 201, 630);
-        }
-    }
-    ViewText(ui, "Click to build  /  Esc cancels     |     Wheel zoom  /  Right drag pan     |     H for field guide",
-         24, SCREEN_H - 21, 14, MUTED);
-}
-
-void ViewWorldHUD(ViewContext *ui)
-{
-    GameState *g = ui->g;
-    const char *tabs[] = {"Objectives  O", "Workforce  W", "Discoveries  R", "Rivals", "Inspect"};
-    for (int i = 0; i < 5; i++)
-        if (ViewButton(ui, (Rectangle){22 + i * 135, 103, 126, 33}, tabs[i], ui->panel == i, true))
-            ui->panel = i;
-    ViewRounded((Rectangle){22, 151, 238, 67}, Fade(INK, .89f));
-    ViewLabel(ui, g->tick < WINTER_END    ? "01 / THE LONG WINTER"
-          : g->discovery[FARMING] ? "03 / ROOTS IN THE EARTH"
-                                  : "02 / A PERMANENT CAMP",
-          37, 163);
-    ViewTitle(ui, g->tick < WINTER_END    ? "Keep the fire alive"
-          : g->discovery[FARMING] ? "Let this be home"
-                                  : "A valley waking up",
-          37, 185, 20, PAPER);
-    ViewRounded((Rectangle){812, 103, 296, 33}, Fade(INK, .90f));
-    if (ViewButton(ui, (Rectangle){816, 106, 56, 27}, ui->speed == 0 ? "Play" : "Pause", ui->speed == 0, true))
+    DrawLine(567, 10, 567, 38, Fade(MUTED, .25f));
+    ViewText(ui, TextFormat("%d/%d people", GamePopulation(g), GameHousing(g)), 582, 14, 18, PAPER);
+    if (ViewButton(ui, (Rectangle){704, 8, 74, 32}, TextFormat("Idle %d", GameRoleCount(g, IDLE)), false,
+                   true))
+        ViewSelectIdle(ui);
+    if (ViewButton(ui, (Rectangle){788, 8, 136, 32}, AGES[f->age].name, false, true))
+        ViewTogglePanel(ui, 0);
+    ViewText(ui,
+             TextFormat("Day %llu  /  %s", (unsigned long long)g->tick / DAY_TICKS + 1,
+                        g->tick < WINTER_END ? "Winter"
+                        : ViewSnow(ui) > .1f ? "Thaw"
+                                             : "Growing"),
+             938, 8, 16, PAPER);
+    ViewText(ui,
+             TextFormat("%02llu:%02llu / %d%% warm", (unsigned long long)g->tick / 600,
+                        (unsigned long long)g->tick / 10 % 60, f->warmth),
+             938, 27, 14, MUTED);
+    if (ViewButton(ui, (Rectangle){1082, 8, 65, 32}, ui->speed ? "Pause" : "Play", !ui->speed, true))
     {
         if (ui->speed)
         {
@@ -100,105 +80,168 @@ void ViewWorldHUD(ViewContext *ui)
         else
             ui->speed = ui->lastSpeed;
     }
-    int speeds[] = {1, 2, 4};
+    const int speeds[] = {1, 2, 4};
     for (int i = 0; i < 3; i++)
-        if (ViewButton(ui, (Rectangle){878 + i * 48, 106, 43, 27}, TextFormat("%dx", speeds[i]),
-                   ui->speed == speeds[i], true))
-            ui->speed = speeds[i];
-    ViewText(ui,
-        TextFormat("%02llu:%02llu", (unsigned long long)g->tick / 600, (unsigned long long)g->tick / 10 % 60),
-        1030, 115, 14, PAPER);
-    ViewRounded((Rectangle){903, 158, 204, 52}, Fade(INK, .85f));
-    ViewLabel(ui, "CAMP WARMTH", 916, 169);
-    ViewText(ui, TextFormat("%d%%", g->warmth), 1050, 169, 16, g->warmth < 80 ? ACCENT : SAGE);
-    ViewBar(916, 191, 176, g->warmth / 100.0f, g->warmth < 50 ? RUST : SAGE);
-    int warningY = 232;
-    if (g->foodWarning || g->coldWarning || g->raidWarning || g->raidActive)
+        if (ViewButton(ui, (Rectangle){1153 + i * 43, 8, 38, 32}, TextFormat("%dx", speeds[i]),
+                       ui->speed == speeds[i], true))
+            ui->speed = ui->lastSpeed = speeds[i];
+    if (ViewButton(ui, (Rectangle){1291, 8, 54, 32}, "Help", false, true))
+        ui->help = true;
+    if (ViewButton(ui, (Rectangle){1353, 8, 71, 32}, "Menu", false, true))
+        ui->menu = true;
+}
+
+void ViewBuildPalette(ViewContext *ui)
+{
+    if (!ui->buildMenu || !ViewSelectedWorkers(ui))
+        return;
+    const char *names[] = {"Hearth", "Shelter",    "Stockpile", "Forage", "Hunting",  "Workshop", "Granary",
+                           "Farm",   "Watch post", "Palisade",  "Gate",   "Training", "Smelter"};
+    for (int i = 0; i < BUILDING_COUNT; i++)
     {
-        const char *warning =
-            g->raidActive    ? "Raid underway - rally your guards"
-            : g->raidWarning ? "Raid approaching - prepare or offer a truce"
-            : g->foodWarning
-                ? TextFormat("Food: %.1f minutes left - assign foragers or hunters",
-                             (float)g->stock[FOOD] / (float)(GamePopulation(g) ? GamePopulation(g) : 1))
-                : "Cold causes harm after 3 min - build beds and gather wood";
-        Rectangle r = {22, (float)warningY, 536, 39};
-        ViewRounded(r, (Color){102, 62, 42, 242});
-        ViewText(ui, "!", 36, warningY + 10, 18, ACCENT);
-        ViewText(ui, warning, 55, warningY + 12, 16, PAPER);
+        Rectangle r = ViewBuildRect(ui, i);
+        bool hover = ViewHit(ui, r);
+        ViewRounded(r, ui->build == i ? (Color){75, 94, 62, 255}
+                       : hover        ? (Color){56, 71, 53, 255}
+                                      : (Color){41, 55, 43, 255});
+        ViewBorder(r, ui->build == i ? ACCENT : Fade(MUTED, .3f));
+        Atlas atlas = i >= TRAINING_GROUND ? ui->bronze : ui->objects;
+        int index = i >= TRAINING_GROUND ? i - TRAINING_GROUND : i;
+        Rectangle src = atlas.rect[index];
+        float width = src.height > 0 ? ViewMinF(32, 32 * src.width / src.height) : 32;
+        ViewSprite(atlas, index, (Vector2){r.x + 37, r.y + 34}, width, WHITE, false);
+        float w = MeasureTextEx(ui->font, names[i], 14, .5f).x;
+        ViewText(ui, names[i], r.x + (r.width - w) / 2, r.y + 37, 14, PAPER);
         if (ViewClick(ui, r))
         {
-            ui->panel = g->raidActive || g->raidWarning ? 3 : 1;
+            ui->build = ui->build == i ? -1 : i;
+            ui->orderMode = 0;
         }
-        warningY += 46;
-    }
-    // Every tile is known from the start. This overview also recenters the camera.
-    Rectangle map = {928, 586, 179, 127};
-    ViewRounded(map, Fade(INK, .90f));
-    ViewLabel(ui, "THE VALLEY", 941, 597);
-    for (int y = 0; y < 48; y++)
-        for (int x = 0; x < 48; x++)
+        if (hover && ui->allowInput)
         {
-            Tile *t = &g->tiles[GameTile(x, y)];
+            Rectangle h = ViewCommandHintRect(ui);
+            ViewRounded(h, INK);
+            ViewBorder(h, Fade(ACCENT, .35f));
+            ViewTitle(ui, BUILDINGS[i].name, h.x + 12, h.y + 10, 19, ACCENT);
+            ViewWrapText(ui, BUILDINGS[i].description, h.x + 12, h.y + 37, h.width - 24, 16, PAPER);
+            ViewCost(ui, BUILDINGS[i].cost, h.x + 12, h.y + 87, h.width - 24);
+        }
+    }
+    if (ViewButton(ui, ViewBuildRect(ui, BUILDING_COUNT), "Back", false, true))
+        ViewBuildToggle(ui);
+}
+
+static void MiniMap(ViewContext *ui)
+{
+    Rectangle map = ViewMapRect();
+    ViewRounded(map, (Color){30, 42, 34, 255});
+    ViewBorder(map, Fade(ACCENT, .35f));
+    const float cx = map.x + map.width / 2, cy = map.y + 10, sx = .99f, sy = .59f;
+    for (int y = 0; y < MAP_SIZE; y++)
+        for (int x = 0; x < MAP_SIZE; x++)
+        {
+            Tile *t = &ui->g->tiles[GameTile(x, y)];
             Color c = t->terrain == WATER     ? (Color){92, 160, 168, 255}
                       : t->node == NODE_TREE  ? (Color){86, 116, 74, 255}
                       : t->terrain == FERTILE ? (Color){169, 167, 94, 255}
                                               : (Color){150, 167, 129, 255};
             if (t->occupied >= 0)
-                c = ACCENT;
-            DrawRectangle(1017 + (x - y) * 1.6f, 620 + (x + y) * .8f, 2, 2, c);
+                c = ui->g->buildings[t->occupied].owner ? RUST : ACCENT;
+            DrawRectangle(cx + (x - y) * sx, cy + (x + y) * sy, 2, 2, c);
         }
-    Vector2 center = {ui->camera.target.x / TILE_W + ui->camera.target.y / TILE_H,
-                      ui->camera.target.y / TILE_H - ui->camera.target.x / TILE_W};
-    DrawCircleLines((int)(1017 + (center.x - center.y) * 1.6f), (int)(620 + (center.x + center.y) * .8f), 8,
-                    PAPER);
+    for (int i = 0; i < ui->g->citizenCount; i++)
+    {
+        Citizen *c = &ui->g->citizens[i];
+        if (c->alive)
+            DrawRectangle(cx + (c->x - c->y) / 256.f * sx, cy + (c->x + c->y) / 256.f * sy, 2, 2,
+                          c->owner ? RUST : PAPER);
+    }
+    Rectangle world = ViewWorldRect();
+    Vector2 corners[] = {{world.x, world.y},
+                         {world.x + world.width, world.y},
+                         {world.x + world.width, world.y + world.height},
+                         {world.x, world.y + world.height}};
+    Vector2 points[4];
+    for (int i = 0; i < 4; i++)
+    {
+        Vector2 t = ViewTileAt(ui, corners[i]);
+        points[i] = (Vector2){cx + (t.x - t.y) * sx, cy + (t.x + t.y) * sy};
+    }
+    BeginScissorMode(map.x * RENDER_SCALE, map.y * RENDER_SCALE, map.width * RENDER_SCALE,
+                     map.height * RENDER_SCALE);
+    for (int i = 0; i < 4; i++)
+        DrawLineV(points[i], points[(i + 1) % 4], PAPER);
+    EndScissorMode();
     if (ViewClick(ui, map))
     {
-        float mx = (ui->mouse.x - 1017) / 1.6f, my = (ui->mouse.y - 620) / .8f;
-        ui->camera.target = ViewIso(Clamp((mx + my) / 2, 0, 47), Clamp((my - mx) / 2, 0, 47));
+        float mx = (ui->mouse.x - cx) / sx, my = (ui->mouse.y - cy) / sy;
+        ui->camera.target =
+            ViewIso(Clamp((mx + my) / 2, 0, MAP_SIZE - 1), Clamp((my - mx) / 2, 0, MAP_SIZE - 1));
     }
-    if (ui->build >= 0)
+}
+
+void ViewWorldHUD(ViewContext *ui)
+{
+    GameState *g = ui->g;
+    Faction *f = &g->factions[0];
+    const char *goal = !g->winterSurvived ? "Survive winter"
+                       : !f->village      ? "Found your village"
+                       : !g->won          ? "Establish your country"
+                                          : "Country founded";
+    if (ViewButton(ui, ViewObjectiveRect(), TextFormat("%s  /  Objectives O", goal), false, true))
+        ViewTogglePanel(ui, 0);
+    if (ViewHasWarning(ui))
     {
-        Rectangle card = {22, 632, 790, 88};
-        ViewRounded(card, INK);
-        const BuildingDef *d = &BUILDINGS[ui->build];
-        ViewText(ui, d->name, 38, 643, 19, ACCENT);
-        ViewCost(ui, d->cost, 210, 647, 580);
-        char reason[256];
-        if (ui->hoverTile >= 0)
-            GameCanPlace(g, ui->build, ui->hoverTile % MAP_SIZE, ui->hoverTile / MAP_SIZE, reason,
-                         sizeof(reason));
-        else
-            snprintf(reason, sizeof(reason), "Choose a clear place in the valley.");
-        ViewWrapText(ui, reason, 38, 677, 755, 16, PAPER);
+        const char *warning = ui->autosaveBlocked          ? "Autosave paused after load error / F5 to save"
+                              : g->factions[1].raidActive  ? "Raid underway / rally defenders"
+                              : g->factions[1].raidWarning ? "Raid approaching / prepare or negotiate"
+                              : f->foodWarning             ? "Food running low / assign food workers"
+                              : f->coldWarning ? "Cold threatens health / build beds and gather wood"
+                                               : "Housing full / build shelters to recruit";
+        Rectangle r = ViewWarningRect();
+        ViewRounded(r, (Color){101, 57, 36, 245});
+        ViewText(ui, warning, r.x + 12, r.y + 8, 16, PAPER);
+        if (ViewClick(ui, r))
+            ViewTogglePanel(ui, g->factions[1].raidActive || g->factions[1].raidWarning ? 3 : 1);
     }
-    else if (ui->areaRole >= 0)
+    if (ui->dragging)
     {
-        ViewRounded((Rectangle){22, 650, 810, 66}, INK);
-        ViewText(ui, ui->areaRole == GUARD ? "Choose a guard rally point"
-                                  : "Choose the center of this role's work area",
-             38, 663, 17, ACCENT);
-        ViewText(ui, "Click a tile in the valley. Esc cancels. Clear areas restores access to the whole map.", 38,
-             690, 16, PAPER);
+        Rectangle r = {fminf(ui->dragStart.x, ui->mouse.x), fminf(ui->dragStart.y, ui->mouse.y),
+                       fabsf(ui->mouse.x - ui->dragStart.x), fabsf(ui->mouse.y - ui->dragStart.y)};
+        DrawRectangleRec(r, Fade(ACCENT, .12f));
+        DrawRectangleLinesEx(r, 1, ACCENT);
     }
-    else if (ui->toastTime > 0)
+    MiniMap(ui);
+    if (ui->orderMode)
     {
-        ViewRounded((Rectangle){22, 647, 810, 68}, INK);
-        ViewWrapText(ui, ui->toast, 38, 663, 777, 16, PAPER);
+        Rectangle r = ViewOrderHintRect();
+        ViewRounded(r, INK);
+        ViewText(ui,
+                 ui->orderMode == VIEW_ORDER_RALLY ? "Choose a rally point / Esc cancels"
+                                                   : "Choose a target / Shift queues / Esc cancels",
+                 r.x + 12, r.y + 7, 16, PAPER);
     }
-    else if (ui->autosaveBlocked)
+    if (ui->toastTime > 0)
     {
-        ViewRounded((Rectangle){22, 647, 810, 68}, INK);
-        ViewText(ui, "Autosave paused after a load error.", 38, 661, 16, ACCENT);
-        ViewText(ui, "Load a usable save, or press F5 to explicitly save this village and resume autosaving.", 38,
-             690, 16, PAPER);
+        ViewRounded((Rectangle){528, 100, 600, 57}, INK);
+        ViewWrapText(ui, ui->toast, 543, 111, 570, 16, PAPER);
     }
-    else if (g->tick < 1200)
-    {
-        ViewRounded((Rectangle){22, 632, 790, 86}, Fade(INK, .94f));
-        ViewLabel(ui, "YOUR FIRST DECISION", 38, 645);
-        ViewText(ui, "Eight people. One fire. A future to build.", 38, 664, 20, PAPER);
-        ViewText(ui, "Choose Shelter below and place two near the hearth. Builders take it from there.", 38, 694, 16,
-             MUTED);
-    }
+    // Rates and reserve details stay available without occupying the main HUD.
+    for (int r = 0; r < RESOURCE_COUNT; r++)
+        if (ui->allowInput && ViewHit(ui, (Rectangle){14 + r * 78, 0, 78, WORLD_TOP}))
+        {
+            double minutes = g->tick ? g->tick / 600.0 : 1;
+            ViewRounded((Rectangle){16, 54, 660, 94}, INK);
+            ViewTitle(ui, TextFormat("%s  /  %d available", RESOURCE_NAMES[r], f->stock[r]), 30, 63, 19,
+                      ACCENT);
+            ViewText(ui,
+                     TextFormat("Produced %.1f/min   Spent %.1f/min   Reserved %d  (campaign averages)",
+                                f->produced[r] / minutes, f->spent[r] / minutes, f->reserved[r]),
+                     30, 91, 16, PAPER);
+            ViewText(ui,
+                     r == FOOD ? TextFormat("Upkeep %d/min. Food reserve %.1f days.", GamePopulation(g),
+                                            GameFoodDaysTenths(g) / 10.f)
+                               : "Workers must deliver carried goods before they can be spent.",
+                     30, 119, 16, MUTED);
+        }
 }

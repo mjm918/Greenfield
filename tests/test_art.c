@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 static int errors = 0;
-static void CheckAtlas(const char *path)
+static void CheckAtlas(const char *path, int grid)
 {
     Image image = LoadImage(path);
     if (!image.data)
@@ -12,14 +12,14 @@ static void CheckAtlas(const char *path)
         return;
     }
     Color *pixels = LoadImageColors(image);
-    int w = image.width / 4, h = image.height / 4;
-    for (int cell = 0; cell < 16; cell++)
+    int w = image.width / grid, h = image.height / grid;
+    for (int cell = 0; cell < grid * grid; cell++)
     {
         int solid = 0, empty = 0;
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
             {
-                Color c = pixels[(cell / 4 * h + y) * image.width + cell % 4 * w + x];
+                Color c = pixels[(cell / grid * h + y) * image.width + cell % grid * w + x];
                 solid += c.a > 100;
                 empty += c.a == 0;
             }
@@ -34,12 +34,13 @@ static void CheckAtlas(const char *path)
 }
 int main(int argc, char **argv)
 {
-    if (argc != 5)
+    if (argc != 6)
         return 2;
     SetTraceLogLevel(LOG_WARNING);
-    CheckAtlas(argv[1]);
-    CheckAtlas(argv[2]);
-    CheckAtlas(argv[4]);
+    CheckAtlas(argv[1], 4);
+    CheckAtlas(argv[2], 4);
+    CheckAtlas(argv[4], 4);
+    CheckAtlas(argv[5], 2);
     Image image = LoadImage(argv[3]);
     if (!image.data)
         return 1;
@@ -69,26 +70,28 @@ int main(int argc, char **argv)
         }
     if (detailedBlocks < 100)
     {
-        fprintf(stderr, "World still looks enlarged from a pixel grid: only %d detailed blocks\n", detailedBlocks);
+        fprintf(stderr, "World still looks enlarged from a pixel grid: only %d detailed blocks\n",
+                detailedBlocks);
         errors++;
     }
-    // The title is light text on a solid dark header. Smooth glyph edges must
+    // Resource totals are light text on a solid dark header. Smooth glyph edges must
     // contain intermediate shades, rather than only foreground/background pixels.
     int smoothText = 0;
-    for (int y = 24; y < 84; y++)
-        for (int x = 48; x < 450; x++)
-        {
-            Color c = p[y * image.width + x];
-            smoothText += c.r > 45 && c.r < 230 && c.g > 55 && c.g < 225;
-        }
+    for (int r = 0; r < 7; r++)
+        for (int y = 22; y < 64; y++)
+            for (int x = (44 + r * 78) * 2; x < (44 + r * 78) * 2 + 40; x++)
+            {
+                Color c = p[y * image.width + x];
+                smoothText += c.r > 45 && c.r < 230 && c.g > 55 && c.g < 225;
+            }
     if (smoothText < 100)
     {
-        fprintf(stderr, "Title lacks smooth glyph edges: %d intermediate pixels\n", smoothText);
+        fprintf(stderr, "Resource text lacks smooth glyph edges: %d intermediate pixels\n", smoothText);
         errors++;
     }
     UnloadImageColors(p);
     UnloadImage(image);
-    printf("48 sprite cells checked; detailed world blocks: %d; smooth text pixels: %d\n",
-           detailedBlocks, smoothText);
+    printf("52 sprite cells checked; detailed world blocks: %d; smooth text pixels: %d\n", detailedBlocks,
+           smoothText);
     return errors ? 1 : 0;
 }

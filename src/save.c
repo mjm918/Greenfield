@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#define WIRE_CAPACITY (1024 * 1024)
+#define WIRE_CAPACITY (4 * 1024 * 1024)
 typedef struct
 {
     unsigned char *bytes;
@@ -54,115 +54,179 @@ static void U64(Wire *w, uint64_t *p)
     if (w->reading)
         *p = ((uint64_t)hi << 32) | lo;
 }
+static void Ref(Wire *w, EntityRef *p)
+{
+    Int(w, &p->slot);
+    Int(w, &p->generation);
+}
+static void WireTile(Wire *w, Tile *p)
+{
+    Int(w, &p->terrain);
+    Int(w, &p->node);
+    Int(w, &p->amount);
+    Int(w, &p->occupied);
+    Int(w, &p->natural);
+    Int(w, &p->regrowth);
+}
+static void WireUnitOrder(Wire *w, UnitOrder *p)
+{
+    Int(w, &p->type);
+    Int(w, &p->targetKind);
+    Int(w, &p->x);
+    Int(w, &p->y);
+    Ref(w, &p->target);
+}
+static void WireProduction(Wire *w, Production *p)
+{
+    Int(w, &p->type);
+    Int(w, &p->unitType);
+    Int(w, &p->progress);
+    Int(w, &p->duration);
+    for (int i = 0; i < RESOURCE_COUNT; i++)
+        Int(w, &p->cost[i]);
+    Ref(w, &p->citizen);
+}
+static void WireBuilding(Wire *w, Building *p)
+{
+    Int(w, &p->alive);
+    Int(w, &p->owner);
+    Int(w, &p->generation);
+    Int(w, &p->type);
+    Int(w, &p->x);
+    Int(w, &p->y);
+    Int(w, &p->hp);
+    Int(w, &p->progress);
+    Int(w, &p->complete);
+    Int(w, &p->upgraded);
+    Int(w, &p->crop);
+    Int(w, &p->cropProgress);
+    Int(w, &p->priority);
+    Int(w, &p->started);
+    Int(w, &p->queueCount);
+    for (int i = 0; i < RESOURCE_COUNT; i++)
+        Int(w, &p->reserve[i]);
+    for (int i = 0; i < MAX_QUEUE; i++)
+        WireProduction(w, &p->queue[i]);
+}
+static void WireCitizen(Wire *w, Citizen *p)
+{
+    Int(w, &p->alive);
+    Int(w, &p->owner);
+    Int(w, &p->generation);
+    Int(w, &p->role);
+    Int(w, &p->unitType);
+    Int(w, &p->equipped);
+    Int(w, &p->x);
+    Int(w, &p->y);
+    Int(w, &p->hp);
+    Int(w, &p->hunger);
+    Int(w, &p->cold);
+    Int(w, &p->job);
+    Int(w, &p->target);
+    Int(w, &p->work);
+    Int(w, &p->harvestCargo);
+    Int(w, &p->pathLength);
+    Int(w, &p->pathIndex);
+    Int(w, &p->pathRevision);
+    Int(w, &p->retry);
+    Int(w, &p->attackCooldown);
+    Int(w, &p->orderCount);
+    Int(w, &p->training);
+    for (int i = 0; i < RESOURCE_COUNT; i++)
+        Int(w, &p->carry[i]);
+    for (int i = 0; i < RESOURCE_COUNT; i++)
+        Int(w, &p->recipe[i]);
+    for (int i = 0; i < MAX_PATH; i++)
+        Int(w, &p->path[i]);
+    for (int i = 0; i < MAX_ORDERS; i++)
+        WireUnitOrder(w, &p->orders[i]);
+}
+static void WireFaction(Wire *w, Faction *p)
+{
+    Int(w, &p->rallyX);
+    Int(w, &p->rallyY);
+    Int(w, &p->research);
+    Int(w, &p->researchProgress);
+    Int(w, &p->researchBuilding);
+    Int(w, &p->age);
+    Int(w, &p->advancing);
+    Int(w, &p->advanceProgress);
+    Int(w, &p->center);
+    Int(w, &p->harvestDelivered);
+    Int(w, &p->bronzeDelivered);
+    Int(w, &p->village);
+    Int(w, &p->villageTick);
+    Int(w, &p->arrivals);
+    Int(w, &p->deaths);
+    Int(w, &p->warmth);
+    Int(w, &p->foodWarning);
+    Int(w, &p->coldWarning);
+    Int(w, &p->shortageTicks);
+    Int(w, &p->shortageRecoveries);
+    Int(w, &p->hadShortage);
+    Int(w, &p->aiEnabled);
+    Int(w, &p->nextDecision);
+    Int(w, &p->nextRaid);
+    Int(w, &p->raidWarning);
+    Int(w, &p->raidActive);
+    Int(w, &p->raidCount);
+    Int(w, &p->raidResolved);
+    Int(w, &p->raidStarted);
+    Int(w, &p->raidSize);
+    Int(w, &p->defeated);
+    for (int i = 0; i < RESOURCE_COUNT; i++)
+        Int(w, &p->stock[i]);
+    for (int i = 0; i < RESOURCE_COUNT; i++)
+        Int(w, &p->initial[i]);
+    for (int i = 0; i < RESOURCE_COUNT; i++)
+        Int(w, &p->produced[i]);
+    for (int i = 0; i < RESOURCE_COUNT; i++)
+        Int(w, &p->spent[i]);
+    for (int i = 0; i < RESOURCE_COUNT; i++)
+        Int(w, &p->imported[i]);
+    for (int i = 0; i < RESOURCE_COUNT; i++)
+        Int(w, &p->exported[i]);
+    for (int i = 0; i < RESOURCE_COUNT; i++)
+        Int(w, &p->reserved[i]);
+    for (int i = 0; i < RESOURCE_COUNT; i++)
+        Int(w, &p->lostGoods[i]);
+    for (int i = 0; i < RESOURCE_COUNT; i++)
+        Int(w, &p->researchReserve[i]);
+    for (int i = 0; i < RESOURCE_COUNT; i++)
+        Int(w, &p->advanceReserve[i]);
+    for (int i = 0; i < ROLE_COUNT; i++)
+        Int(w, &p->areaX[i]);
+    for (int i = 0; i < ROLE_COUNT; i++)
+        Int(w, &p->areaY[i]);
+    for (int i = 0; i < ROLE_COUNT; i++)
+        Int(w, &p->priority[i]);
+    for (int i = 0; i < DISCOVERY_COUNT; i++)
+        Int(w, &p->discovery[i]);
+    WireUnitOrder(w, &p->rallyOrder);
+}
 static void State(Wire *w, GameState *g)
 {
-#define I(v) Int(w, &(v))
     U64(w, &g->tick);
     U32(w, &g->random);
     for (int i = 0; i < TILE_COUNT; i++)
-    {
-        Tile *t = &g->tiles[i];
-        I(t->terrain);
-        I(t->node);
-        I(t->amount);
-        I(t->occupied);
-    }
-    // Fixed-size arrays deliberately include idle slots: no pointers, padding or ABI-dependent bytes.
+        WireTile(w, &g->tiles[i]);
     for (int i = 0; i < MAX_CITIZENS; i++)
-    {
-        Citizen *c = &g->citizens[i];
-        I(c->alive);
-        I(c->role);
-        I(c->x);
-        I(c->y);
-        I(c->hp);
-        I(c->hunger);
-        I(c->cold);
-        I(c->job);
-        I(c->target);
-        I(c->work);
-        for (int k = 0; k < RESOURCE_COUNT; k++)
-            I(c->carry[k]);
-        I(c->harvestCargo);
-        for (int j = 0; j < MAX_PATH; j++)
-            I(c->path[j]);
-        I(c->pathLength);
-        I(c->pathIndex);
-        I(c->pathRevision);
-        I(c->retry);
-        I(c->attackCooldown);
-    }
+        WireCitizen(w, &g->citizens[i]);
     for (int i = 0; i < MAX_BUILDINGS; i++)
-    {
-        Building *b = &g->buildings[i];
-        I(b->type);
-        I(b->x);
-        I(b->y);
-        I(b->progress);
-        I(b->complete);
-        I(b->upgraded);
-        I(b->crop);
-        I(b->cropProgress);
-        I(b->priority);
-    }
-    for (int i = 0; i < MAX_RAIDERS; i++)
-    {
-        Raider *r = &g->raiders[i];
-        I(r->active);
-        I(r->x);
-        I(r->y);
-        I(r->hp);
-        I(r->retreat);
-        I(r->cooldown);
-        I(r->stolen);
-    }
-    I(g->citizenCount);
-    I(g->buildingCount);
-    for (int k = 0; k < RESOURCE_COUNT; k++)
-    {
-        I(g->stock[k]);
-        I(g->initial[k]);
-        I(g->produced[k]);
-        I(g->spent[k]);
-        I(g->stolen[k]);
-    }
-    for (int k = 0; k < ROLE_COUNT; k++)
-    {
-        I(g->areaX[k]);
-        I(g->areaY[k]);
-        I(g->priority[k]);
-    }
-    I(g->rallyX);
-    I(g->rallyY);
-    I(g->mapRevision);
-    for (int k = 0; k < DISCOVERY_COUNT; k++)
-        I(g->discovery[k]);
-    I(g->research);
-    I(g->researchProgress);
-    I(g->winterSurvived);
-    I(g->harvestDelivered);
-    I(g->raidResolved);
-    I(g->won);
-    I(g->lost);
-    I(g->nextArrival);
-    I(g->arrivals);
-    I(g->deaths);
-    I(g->nextRaid);
-    I(g->raidWarning);
-    I(g->raidActive);
-    I(g->raidLosses);
-    I(g->raidLoot);
-    I(g->truceUntil);
-    I(g->raidCount);
-    I(g->warmth);
-    I(g->foodWarning);
-    I(g->coldWarning);
-    I(g->shortageTicks);
-    I(g->shortageRecoveries);
-    I(g->hadShortage);
+        WireBuilding(w, &g->buildings[i]);
+    for (int i = 0; i < FACTION_COUNT; i++)
+        WireFaction(w, &g->factions[i]);
+    Int(w, &g->citizenCount);
+    Int(w, &g->buildingCount);
+    Int(w, &g->mapRevision);
+    Int(w, &g->winterSurvived);
+    Int(w, &g->won);
+    Int(w, &g->lost);
+    Int(w, &g->truceUntil);
+    Int(w, &g->treaty);
+    Int(w, &g->lastHostileTick);
+    Int(w, &g->eventCount);
     Bytes(w, g->events, sizeof(g->events));
-    I(g->eventCount);
-#undef I
 }
 static uint64_t Digest(const unsigned char *p, size_t n)
 {
@@ -187,7 +251,7 @@ uint64_t GameHash(const GameState *g)
         return 0;
     Wire w = {data, 0, WIRE_CAPACITY, 0, 1};
     State(&w, (GameState *)g);
-    uint64_t h = Digest(data, w.at);
+    uint64_t h = w.ok ? Digest(data, w.at) : 0;
     free(data);
     return h;
 }
@@ -200,6 +264,11 @@ bool GameSave(const GameState *g, const char *path, char *reason, int size)
         return Fail(reason, size, "Not enough memory to save.");
     Wire w = {data, 24, WIRE_CAPACITY, 0, 1};
     State(&w, (GameState *)g);
+    if (!w.ok)
+    {
+        free(data);
+        return Fail(reason, size, "Save exceeds the format limit.");
+    }
     size_t length = w.at;
     uint32_t version = SAVE_VERSION, bytes = (uint32_t)(length - 24);
     uint64_t hash = Digest(data + 24, bytes);

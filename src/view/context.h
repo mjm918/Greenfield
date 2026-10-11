@@ -7,7 +7,7 @@
 #define SCREEN_W 1440
 #define SCREEN_H 900
 #define RENDER_SCALE 2
-#define PANEL_X 1130
+#define WORLD_TOP 48
 #define TILE_W 64.0f
 #define TILE_H 32.0f
 
@@ -19,7 +19,7 @@ typedef struct
 } Atlas;
 typedef struct
 {
-    Atlas objects, people, braids;
+    Atlas objects, people, braids, bronze;
     Font font, title;
     RenderTexture2D canvas;
     Camera2D camera;
@@ -32,6 +32,13 @@ typedef struct
     double accumulator;
     uint64_t lastAutosave;
     int hoverTile;
+    EntityRef selection[MAX_CITIZENS], groups[10][MAX_CITIZENS];
+    int selectionCount, groupCount[10], selectedGeneration, orderMode;
+    bool dragging;
+    bool buildMenu;
+    bool clickConsumed;
+    int commandPage;
+    Vector2 dragStart;
     GameState *g;
 } ViewContext;
 #endif

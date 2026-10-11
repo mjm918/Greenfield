@@ -5,6 +5,6 @@
 Vector2 ViewIso(float x, float y);
 Vector2 ViewTileAt(ViewContext *ui, Vector2 screen);
 float ViewSnow(ViewContext *ui);
-Vector2 ViewBuildingVisual(const Building *b, int *index, float *width);
+Vector2 ViewBuildingVisual(ViewContext *ui, const Building *b, Atlas *atlas, int *index, float *width);
 void ViewWorldDraw(ViewContext *ui);
 #endif

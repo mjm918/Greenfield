@@ -7,7 +7,7 @@ static void AssetName(char *path, size_t n, const char *name)
     snprintf(path, n, "%sassets/%s", GetApplicationDirectory(), name);
 }
 
-static Atlas LoadAtlas(const char *name)
+static Atlas LoadAtlas(const char *name, int columns)
 {
     Atlas a = {0};
     char path[4096];
@@ -16,10 +16,10 @@ static Atlas LoadAtlas(const char *name)
     if (!img.data)
         return a;
     Color *pixels = LoadImageColors(img);
-    int cw = img.width / 4, ch = img.height / 4;
-    for (int i = 0; i < 16; i++)
+    int cw = img.width / columns, ch = img.height / columns;
+    for (int i = 0; i < columns * columns; i++)
     {
-        int sx = i % 4 * cw, sy = i / 4 * ch, minx = cw, miny = ch, maxx = 0, maxy = 0;
+        int sx = i % columns * cw, sy = i / columns * ch, minx = cw, miny = ch, maxx = 0, maxy = 0;
         for (int y = 0; y < ch; y++)
             for (int x = 0; x < cw; x++)
                 if (pixels[(sy + y) * img.width + sx + x].a > 100)
@@ -56,25 +56,27 @@ void ViewSprite(Atlas a, int index, Vector2 foot, float width, Color tint, bool 
 
 bool ViewAssetsLoad(ViewContext *ui)
 {
-    ui->objects = LoadAtlas("settlement-atlas.png");
-    ui->people = LoadAtlas("citizen-atlas.png");
-    ui->braids = LoadAtlas("citizen-braids-atlas.png");
+    ui->objects = LoadAtlas("settlement-atlas.png", 4);
+    ui->people = LoadAtlas("citizen-atlas.png", 4);
+    ui->braids = LoadAtlas("citizen-braids-atlas.png", 4);
+    ui->bronze = LoadAtlas("bronze-atlas.png", 2);
     ui->canvas = LoadRenderTexture(SCREEN_W * RENDER_SCALE, SCREEN_H * RENDER_SCALE);
     SetTextureFilter(ui->canvas.texture, TEXTURE_FILTER_BILINEAR);
     char fontPath[4096];
-    AssetName(fontPath, sizeof(fontPath), "AtkinsonHyperlegible-Regular.ttf");
+    AssetName(fontPath, sizeof(fontPath), "SourceSans3-Regular.ttf");
     ui->font = LoadFontEx(fontPath, 64, NULL, 0);
-    AssetName(fontPath, sizeof(fontPath), "AtkinsonHyperlegible-Bold.ttf");
+    AssetName(fontPath, sizeof(fontPath), "SourceSans3-Semibold.ttf");
     ui->title = LoadFontEx(fontPath, 96, NULL, 0);
     SetTextureFilter(ui->font.texture, TEXTURE_FILTER_BILINEAR);
     SetTextureFilter(ui->title.texture, TEXTURE_FILTER_BILINEAR);
-    return ui->objects.texture.id && ui->people.texture.id && ui->braids.texture.id && ui->canvas.id &&
-           ui->font.texture.id != GetFontDefault().texture.id &&
+    return ui->bronze.texture.id && ui->objects.texture.id && ui->people.texture.id &&
+           ui->braids.texture.id && ui->canvas.id && ui->font.texture.id != GetFontDefault().texture.id &&
            ui->title.texture.id != GetFontDefault().texture.id;
 }
 
 void ViewAssetsUnload(ViewContext *ui)
 {
+    UnloadTexture(ui->bronze.texture);
     UnloadTexture(ui->objects.texture);
     UnloadTexture(ui->people.texture);
     UnloadTexture(ui->braids.texture);

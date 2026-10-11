@@ -5,9 +5,12 @@
 #include <stdio.h>
 
 const Color INK = {37, 48, 42, 255}, PAPER = {240, 234, 213, 255}, MUTED = {161, 174, 151, 255},
-                   ACCENT = {221, 180, 93, 255}, SAGE = {136, 177, 116, 255}, RUST = {192, 104, 74, 255};
+            ACCENT = {221, 180, 93, 255}, SAGE = {136, 177, 116, 255}, RUST = {192, 104, 74, 255};
 
-float ViewMinF(float a, float b) { return a < b ? a : b; }
+float ViewMinF(float a, float b)
+{
+    return a < b ? a : b;
+}
 
 Color ViewMix(Color a, Color b, float f)
 {
@@ -25,11 +28,24 @@ void ViewTitle(ViewContext *ui, const char *text, float x, float y, float size, 
     DrawTextEx(ui->title, text, (Vector2){roundf(x), roundf(y)}, size, 0.5f, color);
 }
 
-void ViewLabel(ViewContext *ui, const char *text, float x, float y) { ViewText(ui, text, x, y, 14, MUTED); }
+void ViewLabel(ViewContext *ui, const char *text, float x, float y)
+{
+    ViewText(ui, text, x, y, 14, MUTED);
+}
 
-bool ViewHit(ViewContext *ui, Rectangle r) { return CheckCollisionPointRec(ui->mouse, r); }
+bool ViewHit(ViewContext *ui, Rectangle r)
+{
+    return CheckCollisionPointRec(ui->mouse, r);
+}
 
-bool ViewClick(ViewContext *ui, Rectangle r) { return ui->allowInput && ViewHit(ui, r) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT); }
+bool ViewClick(ViewContext *ui, Rectangle r)
+{
+    if (!ui->allowInput || ui->clickConsumed || !ViewHit(ui, r) || !IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+        return false;
+    // A submenu may be drawn immediately after opening. One click activates one control.
+    ui->clickConsumed = true;
+    return true;
+}
 
 void ViewRounded(Rectangle r, Color color)
 {
@@ -94,7 +110,7 @@ bool ViewButton(ViewContext *ui, Rectangle r, const char *text, bool selected, b
     ViewBorder(r, selected ? ACCENT : Fade(MUTED, enabled ? 0.4f : 0.15f));
     float width = MeasureTextEx(ui->font, text, 16, 0.5f).x;
     ViewText(ui, text, r.x + (r.width - width) / 2, r.y + (r.height - 16) / 2 - 1, 16,
-         enabled ? PAPER : Fade(MUTED, 0.6f));
+             enabled ? PAPER : Fade(MUTED, 0.6f));
     return enabled && ViewClick(ui, r);
 }
 

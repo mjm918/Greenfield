@@ -1,14 +1,12 @@
-# Greenfield — Founding a Tribe
+# Greenfield — From Tribe to Country
 
-An offline, single-player settlement game in C and raylib. Lead eight Ice Age survivors through the opening winter, build a permanent camp, discover farming, and welcome enough travelers to found a village. The main objective is designed for **45–60 minutes at 1×**; pause, 2× and 4× are available. Play continues after victory.
+An offline survival RTS in C and raylib. Lead eight Ice Age survivors through winter, establish a farming village, and develop a Bronze Age country. Direct workers and soldiers in a fully visible **96 × 96 valley** against one rival with its own economy. Continue in the same world after victory.
 
-The game has a fixed 48 × 48 valley, five resources, eight worker roles, eleven building types, four workshop discoveries, farming, arrivals, warned raids and paid truces. Every resource batch is produced by a worker and carried to storage. Construction needs both materials and builder labor.
+The first village milestone targets **45–60 minutes at 1×**; country formation targets **120–180 minutes**. The two automated command campaigns currently reach those milestones at **53:10** and **124:25**. These measure simulation time, not a completed human or wall-clock playtest. See [validation evidence](docs/country-validation.md).
 
-The game draws its 1440 × 900 logical interface and world into one **2880 × 1800** render target for smooth Retina output. Mipmapped, trilinear sprite filtering preserves detail across zoom levels, and bilinear output scaling avoids hard enlarged pixel blocks. The UI uses larger, antialiased Atkinson Hyperlegible text with bold headings. The existing illustrated assets, palette and stepped UI borders are retained. Original artwork is retained in **Reference Viewer**, with the social icons and “Ninety thousand acres” title removed.
+## Build and run
 
-## Build and open
-
-macOS is the verified target. Requires CMake 3.20+, a C99 compiler and desktop OpenGL. The first configure downloads a checksum-pinned raylib source archive; the game makes no runtime network calls.
+macOS is the primary target. Requires CMake 3.20+, a C99 compiler and desktop OpenGL. Initial configuration downloads checksum-pinned raylib; gameplay makes no network calls.
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -16,91 +14,95 @@ cmake --build build --parallel
 open build/bin/Greenfield.app
 ```
 
-The app loads its packaged `assets` directory beside the executable. It does not depend on your current working directory or installed system fonts. Other desktop targets retain raylib's build path, but have not been runtime-verified.
+Assets load beside the executable. The renderer keeps the smooth isometric artwork, mipmapped sprites, Source Sans 3 Regular/Semibold fonts and restrained pixel borders. The 1440 × 900 logical view renders at 2880 × 1800 for Retina output. **Reference Viewer** preserves the cleaned illustration without the social icons or “Ninety thousand acres” label.
 
-## Your first village
+The gameplay HUD has a 48px resource strip and compact floating controls. The world extends to the bottom edge: a 100px selection tray (50px when nothing is selected) and a separate minimap replace the full-width bottom band. Construction expands to 142px only while open. Empty queues and permanent instruction columns take no space; occupied queues appear above the tray. Select workers for construction and work commands, soldiers for combat commands, or buildings for their production and upgrade controls. Objectives, workforce, discoveries and diplomacy open in a dismissible ledger; no permanent sidebar remains. Hover controls for costs and requirements. Resource totals are compacted above 10,000; hover shows exact values.
 
-1. Place two **Shelters** near the hearth. The two starting builders complete them automatically.
-2. Keep foragers, a hunter and a woodcutter working. Each person eats one food per minute; the hearth uses one wood every twenty seconds during winter. Citizens recover when fed and warm.
-3. Build a **Workshop**, then give the unassigned citizen a crafter role. Crafters make tools when no discovery is active. Tools speed gathering; running out slows work without preventing recovery.
-4. Discover better tools, insulation and food storage. Select shelters to upgrade them into insulated huts. Discover farming after the twelve-minute winter.
-5. Put **Farm plots** on the fertile riverbank and assign farmers. They plant, wait for growth and carry the harvest to storage. Granaries reduce spoilage and accept food deliveries.
-6. Add housing and maintain food reserves. The first two travelers arrive at minute 18, followed by pairs every six minutes when there are two free beds and a day's food for the current population. A missed arrival retries after one minute.
-7. Keep guards near the rally flag or offer **40 food for a twelve-minute truce**. Raids give ninety seconds' warning, steal at most eighteen food, and retreat. A raid lasts at most six minutes, including a bounded surrender fallback for trapped raiders.
+## Building a civilization
 
-Victory requires surviving winter, twenty living people, a bed for everyone, a delivered harvest, three days of stored food, and resolving a raid through defense or truce. All citizens dying ends the game. v1 supports up to 64 citizen records and 160 buildings.
+1. **Ice Age Tribe.** Select workers, press B, and build two shelters for eight beds. Starting workers gather automatically; select people to change their jobs or issue direct orders. Each citizen consumes one food per minute. During the twelve-minute opening winter, the hearth consumes one wood every twenty seconds. Shortages warn before damage; restored food and warmth allow recovery.
+2. **Settled Tribe.** After surviving winter and housing everyone, fund the center upgrade in Objectives. Builders supply its labor. Construct a workshop and assign crafters. Research insulation, food storage and farming. Build a training ground to organize soldiers.
+3. **Farming Village.** Have sixteen citizens and both farming and storage discoveries, then upgrade the center again. Farms unlock on fertile soil; farmers plant, wait for growth and deliver harvests. Automatic reseeding costs two wood. Research metallurgy to mine ore and operate a staffed smelter: four ore plus two wood makes two bronze.
+4. **Bronze Age.** Have thirty-two citizens, an operating smelter and delivered bronze, then fund the Council Hall upgrade. Bronze equipment costs resources per soldier. Research crop yield and stonework for improved production and stronger buildings; existing buildings can be repaired to the higher health limit.
+5. **Country.** Complete the Council Hall, house fifty living citizens, store three days of food, secure both outlined resource sites with nearby watch posts, and obtain a lasting treaty or the rival’s surrender. Hostile soldiers near a site contest it. Destroying the rival center forces surrender and withdrawal. Losing every citizen ends the campaign.
+
+The original twenty-person village objective remains an intermediate milestone: winter survived, sufficient housing, a delivered harvest, three days of food, and a raid resolved through defense or truce.
+
+Recruit adults at the center for twelve food, time and spare housing. Recruitment takes four minutes early, three minutes in the farming age, and 1m45s in Bronze. Housing loss pauses recruitment without deleting people. Each faction supports **96 living citizens**; dead slots are reused with generation-checked handles.
+
+Resources remain shared by faction, accessed through physical deliveries. Food, wood, stone, hides, tools, ore and bronze compete for construction, survival, technology and army production. Hover a resource to see campaign-average production/spending, reserved materials and food upkeep. Carrying goods does not make them spendable. Trees slowly regrow; exhausted mineral deposits provide reduced extraction for continued play.
+
+## Army and rival
+
+Training converts existing citizens, retaining their health, housing and food needs. Demobilization returns them to work. Selected groups distribute training across available training grounds; each building has its own queue.
+
+| Class | Strength | Weakness |
+| --- | --- | --- |
+| Shield spearman | Armor; counters slingers | Axemen |
+| Slinger | Fast, ranged; counters axemen | Shield spearmen |
+| Axeman | Counters spearmen; high building damage | Ranged fire while approaching |
+
+Right-click enemies to attack, or use attack-move to engage along a route. Buildings can be damaged, repaired and destroyed. Palisades block routes; gates admit their own faction. Blueprints reserve placement but remain walkable until builders start construction.
+
+The rival gathers, builds, researches, recruits and trains through the same commands and costs. It receives no resource grants or replacement troops. Organized raids give ninety seconds’ warning. Raiders carry at most eighteen goods each, taken from actual stocks, and must deliver them home. Raids retreat after substantial losses or four minutes. Killing workers and destroying production buildings reduce the rival’s actual economy.
+
+A temporary truce costs the displayed food payment and lasts twelve minutes. A lasting treaty requires Bronze advancement, ten uninterrupted peaceful minutes, 200 food and 30 bronze. Payments transfer to the rival’s shared stores. Truces and treaties block combat for both factions.
 
 ## Controls
 
 | Input | Action |
 | --- | --- |
-| Left click | Place a building or inspect a citizen/building |
-| Shift + place | Keep the current building selected |
-| Space | Pause/resume |
-| 1 / 2 / 4 | Simulation speed |
-| B | Select shelter / cancel placement |
-| W / R / O | Workforce / discoveries / objectives |
-| Mouse wheel | Zoom toward the pointer |
-| Right-drag / arrows | Pan |
-| Home / M | Founding camp / whole-valley overview |
-| Click minimap | Recenter |
-| G / H | Grid / field guide |
-| F5 / F9 | Save / load |
-| F | Borderless fullscreen |
-| Escape | Cancel placement, close guide, or open menu |
+| Left click / drag | Select a citizen/building / select a group |
+| Shift + selection | Add or toggle selected citizens |
+| Right click | Contextual move, gather, build, repair, work, deliver or attack |
+| Shift + order | Append an order, up to sixteen |
+| Ctrl + number / number | Store / recall a control group |
+| A / D / L, then click | Attack-move / defend / plunder a depot |
+| S / X / T | Stop / hold position / retreat to rally |
+| Select center, right click | Set new recruits’ rally instruction |
+| Space / F1 / F2 / F3 | Pause / 1× / 2× / 4× |
+| Middle drag / arrows / wheel | Pan / pan / zoom |
+| Home / M / minimap click | Founding camp / whole valley / recenter |
+| B / W / R / O | Worker construction palette / workforce / discoveries / objectives |
+| G / H / F | Grid / field guide / borderless fullscreen |
+| F5 / F9 / Escape | Save / load / cancel placement, close palette or ledger, then menu |
 
-In Workforce, reduce one role before adding people to another. **Area** assigns work within nine tiles of a chosen center. **High** priority gives that role first access to shared work. **Rally guards** chooses the defended area; finishing a watch post moves the rally there. Clear areas restores whole-valley access.
+Workforce acts on the selected citizens. Counts reflect actual roles; there is no independent allocation budget. Production and advancement can be cancelled for a refund. Materials are reserved once, spent when the item completes, or recorded as lost when its building is destroyed.
 
 ## Saves
 
-The single local slot on macOS is:
+The new single slot is `~/Library/Application Support/Greenfield/country.gfv2` on macOS (`~/.greenfield/country.gfv2` elsewhere). Old `.gfv1` files remain untouched and are not migrated. Manual saves and two-minute simulation-time autosaves use the same slot. A new game does not overwrite it until saving occurs. Closing does not force a save.
 
-```text
-~/Library/Application Support/Greenfield/village.gfv1
-```
+Version 2 explicitly serializes both factions, generation handles, orders, routes, cargo, reservations, queues, discoveries, advancement, weather, AI decisions, combat and treaties. Validation precedes save; a temporary file is flushed and synced before atomic rename. Load validates a separate candidate before replacing the current game. Invalid/interrupted saves preserve the last usable slot. Failed loading pauses autosave until deliberate saving, successful loading or a new game.
 
-Manual saves and autosaves use the same slot. Autosave runs every two minutes of simulation time while playing, including after victory. Starting a new game leaves the prior slot intact until a save occurs. Closing the app does not force a save.
-
-The format has a version, explicit little-endian fields, length and checksum. It includes routes, carried goods, paid construction, jobs, research, crops, health, seasonal time and rival state. Saving validates conservation and state first, writes and flushes a temporary file, then atomically renames it. Loading decodes and validates a separate candidate before replacing the current village. Incomplete, corrupt and incompatible saves do not overwrite the existing file or current game.
-
-A failed load pauses autosave until a successful load, an explicit save, or a new game. Failed autosaves wait for the next two-minute interval before trying again. The UI displays the error and recovery action.
-
-## Verification and captures
+## Verification
 
 ```sh
 ctest --test-dir build --output-on-failure
-./build/bin/Greenfield.app/Contents/MacOS/Greenfield --game-capture build/evidence/game-winter.png
-./build/bin/Greenfield.app/Contents/MacOS/Greenfield --game-capture build/evidence/game-village.png --load build/campaign.gfv1
-./build/bin/Greenfield.app/Contents/MacOS/Greenfield --reference --capture build/evidence/reference-manual.png
-./build/bin/Greenfield.app/Contents/MacOS/Greenfield --time 1.25 --capture build/evidence/animated-manual.png
+cd build
+./game_tests
+./game_campaign treaty
+./game_campaign military
+./game_capacity_tests
 ```
 
-CTest covers simulation invariants, economic conservation, single charges, assignment and placement validation, path recovery, hunger/cold damage and recovery, farming and delivery, arrivals, defense, bounded theft/retreat, truce expiry, frame-rate/speed equivalence, save round trips and failed replacements. A command-driven campaign proves the victory conditions are achievable in the intended simulated duration, including recovery from shortage and a raid. The art check validates all 48 sprite cells, the full-resolution capture, detailed world edges and antialiased text. The existing `pixel_art` CTest name is retained for command compatibility. GPU capture tests require a graphical session.
-
-For the separate **wall-clock 1× campaign**:
+The campaign scripts use ordinary player commands, allow shortages and theft, and check timing, objectives and a mid-campaign save/load. The capacity test uses an explicitly constructed stress fixture, separate from campaign evidence. Version-2 checkpoints deliberately replace the old gameplay expectations; historical version-1 fixtures remain for provenance, not acceptance.
 
 ```sh
-cd build
-./game_tests --realtime-campaign > evidence/realtime-campaign.log
+build/bin/Greenfield.app/Contents/MacOS/Greenfield --game-capture build/evidence/winter.png
+build/bin/Greenfield.app/Contents/MacOS/Greenfield --game-capture build/evidence/country.png --load build/evidence/treaty-campaign.gfv2
+build/bin/Greenfield.app/Contents/MacOS/Greenfield --game-capture build/evidence/group.png --load build/evidence/military-campaign.gfv2 --capture-panel 4 --capture-selection
+build/bin/Greenfield.app/Contents/MacOS/Greenfield --game-capture build/evidence/overview.png --load build/evidence/capacity.gfv2 --capture-overview --benchmark-frames 300
+build/bin/Greenfield.app/Contents/MacOS/Greenfield --reference --capture build/evidence/reference.png
+build/bin/Greenfield.app/Contents/MacOS/Greenfield --verify build/evidence
 ```
 
-This is an automated simulation playthrough using the same validated command API as the UI, with one fixed tick every 100 ms. It intentionally exhausts food early, restores gathering, suffers theft, and continues to victory. It writes the ending save to `evidence/realtime-campaign.gfv1`. This is distinct from a human playtest; the wider range of player strategies still needs playtesting.
+Capture options also include `--capture-panel 0..3` for ledger tabs (`4` closes the ledger), `--capture-build 0..12` for worker construction, `--capture-building 0..12` for an existing building, and `--capture-soldiers` for an existing army. Benchmark mode advances the loaded test state at 1× simulation time per sixty frames, disables frame limiting and reports rendering time after ten warm-up frames. It does not autosave. GPU tests require a graphical session. See [architecture](docs/architecture.md) for ownership and extension rules.
 
-The preserved reference test compares every RGBA pixel to the cleaned source, requires zero changes outside the four repair regions, checks all nineteen reference avatars animate, verifies deterministic paused frames and confines greetings to the selected avatar. The original `ui.jpeg` is unchanged.
+## Assets and runtime activity
 
-## Ownership and assets
+The existing C/raylib/CMake foundation, macOS bundle, reference viewer, simulation modules, command boundary, economy ledger, atomic serializer and three original atlases are reused. New owners handle direct orders, production queues, progression, shared combat and deterministic rival decisions. There is one authoritative `GameState`; no second economy, scripted-raider system or gameplay store remains.
 
-- `src/game.h`: public commands, queries and the single authoritative `GameState`.
-- `src/game.c`: initialization, command dispatch, fixed 100 ms update order and objectives. `src/sim/` owns the individual gameplay systems: world, citizens, jobs, economy, buildings, workshop, farming, survival, rivals, definitions and validation. UI never awards resources directly.
-- `src/save.c`: one canonical serializer shared by persistence and deterministic state hashes. No raw C struct dumps or pointer fields.
-- `src/game_view.c`: window/frame lifecycle and composition. `src/view/` owns assets, input, world drawing, widgets, HUD, panels, screens and save/command adapters, sharing one explicitly passed `ViewContext`.
-- `src/reference.c` / `scene.fs`: preserved illustration viewer and its original localized animation/capture verification.
-- `tests/campaign.c`: test-only player commands. It is not linked into the playable game and does not inject resources or complete objectives directly.
+The new transparent `bronze-atlas.png` supplies the training ground, smelter and two civic-center stages. Its generation brief is recorded alongside the original atlas prompt files. Soldier equipment is drawn over the existing walking/working/combat animation frames. [Source Sans 3](https://github.com/adobe-fonts/source-sans) replaces the two gameplay fonts under the SIL Open Font License. The packaged license and pinned-source checksums are recorded in `assets/font-credits.md`. Historical font files remain in the repository.
 
-See [Code organization](docs/architecture.md) for module ownership, extension rules and focused test commands. Simulation checks live in `tests/sim/`; `simulation_baseline` preserves pre-refactor campaign hashes and version-1 save continuations, while `view_input` checks the production input adapters with controlled input. The public simulation API and save format are unchanged.
-
-The existing C/raylib/CMake application, macOS bundle, asset-loading convention, reference camera/input and GPU verification were reused. New surfaces are the simulation, renderer, canonical local save and modular art, each needed to replace a fixed illustration with a changeable village. There is one resource ledger, command path, serializer and simulation tick; no parallel gameplay store or backend.
-
-Runtime I/O is three local PNG atlas reads and two packaged TTF reads when opening gameplay, the existing reference asset reads when opening that viewer, and explicit/periodic local save writes or user-requested loads. The higher-resolution renderer replaces two low-resolution render targets with one larger target and generates sprite mipmaps once at load; it adds no filesystem writes or background work. There are no accounts, telemetry, network services or background workers.
-
-The settlement atlas and both citizen atlases were made with the built-in imagegen tool. Exact prompts are saved in `assets/settlement-atlas-prompt.txt`, `assets/citizen-atlas-prompt.txt` and `assets/citizen-braids-atlas-prompt.txt`. The reference repairs retain their original prompt files. The former Romulus and Alagard font assets and their upstream credits remain in `assets/` for provenance. Gameplay packages [Atkinson Hyperlegible Regular and Bold](https://github.com/google/fonts/tree/main/ofl/atkinsonhyperlegible), copyright Braille Institute of America, under the SIL Open Font License; the bundled license is `assets/AtkinsonHyperlegible-LICENSE.txt`.
+Runtime I/O adds one packaged PNG read and a larger payload in the existing save operations. No accounts, services, networking, telemetry, new runtime dependencies or background workers are introduced. GPU mipmaps and batches stay in memory.

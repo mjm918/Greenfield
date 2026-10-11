@@ -1,245 +1,190 @@
 #include "panels.h"
 #include "actions.h"
-#include "assets.h"
-#include "context.h"
+#include "layout.h"
 #include "widgets.h"
-
-static const char *CITIZEN_NAMES[] = {"Asha", "Tova",  "Oren", "Nara", "Koa",  "Eira", "Bram", "Suri",
-                                      "Luma", "Tarin", "Ari",  "Mira", "Ivo",  "Una",  "Ravi", "Nima",
-                                      "Arlo", "Yara",  "Finn", "Sena", "Mako", "Eden", "Runa", "Tala"};
-
-static void PanelBase(ViewContext *ui, const char *eyebrow, const char *heading)
-{
-    DrawRectangle(PANEL_X, 86, SCREEN_W - PANEL_X, SCREEN_H - 86, (Color){35, 48, 39, 255});
-    DrawLine(PANEL_X, 86, PANEL_X, SCREEN_H, (Color){95, 105, 78, 255});
-    ViewLabel(ui, eyebrow, PANEL_X + 23, 111);
-    ViewTitle(ui, heading, PANEL_X + 23, 134, 28, PAPER);
-}
 
 static void Objectives(ViewContext *ui)
 {
     GameState *g = ui->g;
-    PanelBase(ui, "THE FIRST CHAPTER", "A place to belong");
-    ViewWrapText(ui, "From a circle around a fire to a village that can endure.", 1153, 178, 260, 16, MUTED);
-    const char *names[] = {"Survive the opening winter", "Welcome 20 people",
-                           "Give everyone a home",       "Bring in the first harvest",
-                           "Store three days of food",   "Defend a raid or make a truce"};
-    bool done[] = {g->winterSurvived,   GamePopulation(g) >= 20,     GameHousing(g) >= GamePopulation(g),
-                   g->harvestDelivered, GameFoodDaysTenths(g) >= 30, g->raidResolved};
-    for (int i = 0; i < 6; i++)
+    Faction *f = &g->factions[0];
+    ViewTitle(ui, f->village ? "Establish your country" : "Found a permanent village", 232, 272, 24, PAPER);
+    const char *names[] = {"Reach Bronze Age and complete the Council Hall", "House 50 living citizens",
+                           "Store three days of food", "Secure both marked resource sites",
+                           "Sign a treaty or obtain the rival's surrender"};
+    bool done[] = {f->age == BRONZE_AGE && f->center >= 0 && g->buildings[f->center].complete,
+                   GamePopulation(g) >= 50 && GameHousing(g) >= GamePopulation(g),
+                   GameFoodDaysTenths(g) >= 30, GameSiteControl(g, 0) == 2,
+                   g->treaty || g->factions[1].defeated};
+    if (!f->village)
     {
-        float y = 241 + i * 51;
-        DrawCircleLines(1161, (int)y + 7, 7, done[i] ? SAGE : Fade(MUTED, .6f));
+        names[0] = "Survive the opening winter";
+        names[1] = "House 20 living citizens";
+        names[2] = "Deliver your first harvest";
+        names[3] = "Store three days of food";
+        names[4] = "Defend a raid or agree a truce";
+        done[0] = g->winterSurvived;
+        done[1] = GamePopulation(g) >= 20 && GameHousing(g) >= GamePopulation(g);
+        done[2] = f->harvestDelivered;
+        done[3] = GameFoodDaysTenths(g) >= 30;
+        done[4] = f->raidResolved;
+    }
+    for (int i = 0; i < 5; i++)
+    {
+        float y = 327 + i * 47;
+        DrawCircleLines(240, y + 8, 7, done[i] ? SAGE : MUTED);
         if (done[i])
-            DrawCircle(1161, (int)y + 7, 3, SAGE);
-        ViewText(ui, names[i], 1179, y - 1, 16, done[i] ? SAGE : PAPER);
-        if (i == 0 && !done[i])
-            ViewLabel(ui, TextFormat("%d:%02d until thaw", (WINTER_END - (int)g->tick) / 600,
-                             ((WINTER_END - (int)g->tick) / 10) % 60),
-                  1179, y + 19);
-        if (i == 1)
-            ViewLabel(ui, TextFormat("%d of 20 citizens", GamePopulation(g)), 1179, y + 19);
-        if (i == 4)
-            ViewLabel(ui, TextFormat("%.1f days stored", GameFoodDaysTenths(g) / 10.0), 1179, y + 19);
+            DrawCircle(240, y + 8, 3, SAGE);
+        ViewText(ui, names[i], 260, y, 17, done[i] ? SAGE : PAPER);
     }
-    DrawLine(1153, 560, 1416, 560, Fade(MUTED, .25f));
-    ViewLabel(ui, "NEXT ARRIVALS", 1153, 581);
-    ViewText(ui, TextFormat("In %d:%02d", (g->nextArrival - (int)g->tick) / 600,
-                    ((g->nextArrival - (int)g->tick) / 10) % 60),
-         1153, 602, 19, PAPER);
-    ViewWrapText(ui,
-        TextFormat("Need 2 spare beds and %d food. Two travelers join at a time.", GamePopulation(g) * 3),
-        1153, 633, 260, 16, MUTED);
-    ViewLabel(ui, "TRIBE CHRONICLE", 1153, 700);
-    for (int i = 0; i < 3 && i < g->eventCount; i++)
+    ViewText(ui,
+             TextFormat("People %d/%d   Beds %d   Food %.1f days", GamePopulation(g), f->village ? 50 : 20,
+                        GameHousing(g), GameFoodDaysTenths(g) / 10.f),
+             232, 593, 18, ACCENT);
+    ViewText(ui, TextFormat("Camp warmth %d%%   /   Resource sites %d/2", f->warmth, GameSiteControl(g, 0)),
+             232, 625, 17, MUTED);
+    DrawLine(726, 272, 726, 658, Fade(MUTED, .25f));
+    ViewLabel(ui, "NEXT AGE", 756, 277);
+    if (f->age == BRONZE_AGE)
     {
-        ViewWrapText(ui, g->events[i], 1153, 723 + i * 49, 260, 14, i ? MUTED : PAPER);
+        ViewTitle(ui, "Bronze Age", 756, 306, 26, ACCENT);
+        ViewWrapText(ui,
+                     "Your Council Hall leads the valley. Complete the country objectives, then continue "
+                     "building in the same world.",
+                     756, 359, 448, 18, PAPER);
+        return;
     }
+    const AgeDef *next = &AGES[f->age + 1];
+    ViewTitle(ui, next->name, 756, 306, 26, ACCENT);
+    ViewCost(ui, next->cost, 756, 353, 448);
+    char why[256];
+    bool ready = GameCanAdvance(g, 0, why, sizeof(why));
+    ViewWrapText(ui, f->advancing ? "Builders are upgrading the communal center." : why, 756, 404, 448, 18,
+                 PAPER);
+    if (f->advancing)
+    {
+        ViewBar(756, 508, 448, (float)f->advanceProgress / next->labor, ACCENT);
+        if (ViewButton(ui, (Rectangle){756, 548, 448, 42}, "Cancel advancement and refund", false, true))
+            ViewCommand(ui, CMD_CANCEL, -2, 0, 0);
+    }
+    else if (ViewButton(ui, (Rectangle){756, 548, 448, 42}, "Advance age", false, ready))
+        ViewCommand(ui, CMD_ADVANCE, 0, 0, 0);
+    ViewWrapText(ui, "Upgrades unlock new choices. Buildings and equipment still require investment.", 756,
+                 616, 448, 16, MUTED);
 }
-
 static void Workforce(ViewContext *ui)
 {
-    GameState *g = ui->g;
-    PanelBase(ui, "EVERY PAIR OF HANDS", "Workforce");
-    ViewText(ui, TextFormat("%d %s available for work", GameRoleCount(g, IDLE),
-                    GameRoleCount(g, IDLE) == 1 ? "person" : "people"),
-         1153, 176, 15, ACCENT);
+    ViewText(
+        ui,
+        TextFormat("%d selected workers. Counts below show actual current roles.", ViewSelectedWorkers(ui)),
+        232, 273, 18, PAPER);
     for (int r = 0; r < ROLE_COUNT; r++)
     {
-        float y = 216 + r * 63;
-        ViewText(ui, ROLE_NAMES[r], 1153, y, 16, PAPER);
-        ViewLabel(ui, g->areaX[r] < 0 ? "Whole valley" : "Assigned work area", 1153, y + 22);
-        if (ViewButton(ui, (Rectangle){1300, y - 4, 26, 27}, "-", false, GameRoleCount(g, r) > 0))
-            ViewCommand(ui, CMD_ASSIGN, r, GameRoleCount(g, r) - 1, 0);
-        ViewText(ui, TextFormat("%d", GameRoleCount(g, r)), 1335, y, 17, ACCENT);
-        if (ViewButton(ui, (Rectangle){1360, y - 4, 26, 27}, "+", false, GameRoleCount(g, IDLE) > 0))
-            ViewCommand(ui, CMD_ASSIGN, r, GameRoleCount(g, r) + 1, 0);
-        if (ViewButton(ui, (Rectangle){1298, y + 28, 57, 22}, "Area", ui->areaRole == r, true))
-            ui->areaRole = ui->areaRole == r ? -1 : r;
-        const char *p[] = {"Low", "Norm", "High"};
-        if (ViewButton(ui, (Rectangle){1362, y + 28, 54, 22}, p[g->priority[r]], false, true))
-            ViewCommand(ui, CMD_PRIORITY, r, (g->priority[r] + 1) % 3, 0);
+        float x = 232 + r % 3 * 328, y = 313 + r / 3 * 99;
+        ViewRounded((Rectangle){x, y, 313, 88}, (Color){44, 59, 47, 255});
+        ViewTitle(ui, TextFormat("%s  /  %d", ROLE_NAMES[r], GameRoleCount(ui->g, r)), x + 14, y + 13, 19,
+                  PAPER);
+        if (ViewButton(ui, (Rectangle){x + 14, y + 45, 285, 31}, "Assign selected workers", false,
+                       ViewSelectedWorkers(ui) > 0))
+            ViewIssueSelected(ui, CMD_ROLE, r, (UnitOrder){0}, false);
     }
-    ViewWrapText(ui, "High-priority roles take shared work first. Area limits work to nine tiles around your choice.",
-             1153, 748, 260, 16, MUTED);
-    if (ViewButton(ui, (Rectangle){1153, 815, 126, 33}, "Rally guards", ui->areaRole == GUARD, true))
-        ui->areaRole = GUARD;
-    if (ViewButton(ui, (Rectangle){1288, 815, 126, 33}, "Clear areas", false, true))
-        for (int r = 0; r < ROLE_COUNT; r++)
-            ViewCommand(ui, CMD_AREA, r, -1, -1);
+    if (ViewButton(ui, (Rectangle){232, 629, 280, 38}, "Select idle citizens", false, true))
+        ViewSelectIdle(ui);
+    ViewText(ui, "Right-click resources for precise work areas. Soldiers still need food and housing.", 535,
+             639, 16, MUTED);
 }
-
 static void Discoveries(ViewContext *ui)
 {
-    GameState *g = ui->g;
-    PanelBase(ui, "KNOWLEDGE TAKES ROOT", "Discoveries");
-    ViewWrapText(ui, "A completed workshop and a crafter turn materials into new possibilities.", 1153, 180, 260, 16,
-             MUTED);
+    Faction *f = &ui->g->factions[0];
+    ViewText(ui, "Staff a workshop. Discoveries require reserved materials and actual crafter labor.", 232,
+             268, 18, PAPER);
     for (int d = 0; d < DISCOVERY_COUNT; d++)
     {
-        float y = 245 + d * 144;
-        ViewRounded((Rectangle){1153, y, 263, 132}, (Color){45, 59, 46, 255});
-        ViewText(ui, DISCOVERIES[d].name, 1166, y + 12, 17, PAPER);
-        ViewWrapText(ui, DISCOVERIES[d].description, 1166, y + 39, 236, 14, MUTED);
-        ViewCost(ui, DISCOVERIES[d].cost, 1166, y + 77, 236);
-        if (g->discovery[d])
-            ViewText(ui, "Discovered", 1166, y + 105, 16, SAGE);
-        else if (g->research == d)
+        float x = 232 + d % 4 * 246, y = 310 + d / 4 * 180;
+        ViewRounded((Rectangle){x, y, 232, 166}, (Color){44, 59, 47, 255});
+        ViewTitle(ui, DISCOVERIES[d].name, x + 12, y + 12, 19, PAPER);
+        ViewCost(ui, DISCOVERIES[d].cost, x + 12, y + 42, 208);
+        ViewWrapText(ui, DISCOVERIES[d].description, x + 12, y + 80, 208, 15, MUTED);
+        if (f->discovery[d])
+            ViewText(ui, "Discovered", x + 12, y + 137, 17, SAGE);
+        else if (f->research == d)
         {
-            ViewBar(1166, y + 106, 232, (float)g->researchProgress / DISCOVERIES[d].labor, ACCENT);
-            ViewText(ui, TextFormat("%d%%", g->researchProgress * 100 / DISCOVERIES[d].labor), 1350, y + 13, 16,
-                 ACCENT);
+            ViewBar(x + 12, y + 145, 111, (float)f->researchProgress / DISCOVERIES[d].labor, ACCENT);
+            if (ViewButton(ui, (Rectangle){x + 133, y + 132, 87, 28}, "Cancel", false, true))
+                ViewCommand(ui, CMD_CANCEL, -1, 0, 0);
         }
-        else if (ViewButton(ui, (Rectangle){1300, y + 100, 101, 24}, "Discover", false, g->research < 0))
+        else if (ViewButton(ui, (Rectangle){x + 12, y + 132, 208, 28}, "Research", false, f->research < 0))
             ViewCommand(ui, CMD_RESEARCH, d, 0, 0);
     }
+    ViewWrapText(ui,
+                 "Cultivation + storage unlock advancement to Farming Village. Farms unlock when advancement "
+                 "completes.",
+                 982, 512, 216, 17, MUTED);
 }
-
-static void RivalPanel(ViewContext *ui)
+static void Rivals(ViewContext *ui)
 {
     GameState *g = ui->g;
-    PanelBase(ui, "ACROSS THE RIVER", "The Ashen camp");
-    ViewWrapText(ui, "A neighboring tribe watches this valley. They raid supplies when the truce runs out.", 1153,
-             181, 260, 16, MUTED);
-    ViewSprite(ui->objects, 1, (Vector2){1285, 361}, 145, (Color){226, 201, 174, 255}, false);
-    DrawLine(1153, 392, 1416, 392, Fade(MUTED, .3f));
-    const char *state = g->raidActive                  ? "Raiders in the valley"
-                        : g->truceUntil > (int)g->tick ? "A truce holds"
-                        : g->raidWarning               ? "A raid is approaching"
-                                                       : "Scouts are watching";
-    ViewText(ui, state, 1153, 417, 18, g->raidWarning ? RUST : ACCENT);
-    int seconds = (g->truceUntil > (int)g->tick ? g->truceUntil : g->nextRaid) - (int)g->tick;
-    if (seconds < 0)
-        seconds = 0;
-    ViewText(ui, TextFormat("%s %d:%02d", g->truceUntil > (int)g->tick ? "Truce remaining" : "Next known raid",
-                    seconds / 600, seconds / 10 % 60),
-         1153, 451, 16, PAPER);
-    if (g->truceUntil > (int)g->tick)
-    {
-        int next = g->truceUntil + 1200 - (int)g->tick;
-        if (next < 0)
-            next = 0;
-        ViewText(ui, TextFormat("Next known raid %d:%02d", next / 600, next / 10 % 60), 1153, 476, 14, MUTED);
-    }
-    ViewWrapText(ui, "Offer 40 food for twelve minutes of peace. An accepted truce also completes the diplomacy "
-             "objective.",
-             1153, 500, 260, 16, MUTED);
-    if (ViewButton(ui, (Rectangle){1153, 581, 263, 43}, "Offer truce  /  40 food", false,
-               g->truceUntil <= (int)g->tick))
+    Faction *f = &g->factions[1];
+    ViewTitle(ui, "The Ashen tribe", 232, 272, 26, PAPER);
+    ViewText(ui,
+             TextFormat("%s  /  %d people  /  %d beds", AGES[f->age].name, GamePopulationFor(g, 1),
+                        GameHousingFor(g, 1)),
+             232, 314, 18, ACCENT);
+    const char *state = f->defeated                    ? "The rival has surrendered"
+                        : g->treaty                    ? "A lasting treaty holds"
+                        : g->truceUntil > (int)g->tick ? "A temporary truce holds"
+                        : f->raidActive                ? "Raiders in the valley"
+                        : f->raidWarning               ? "A raid is mustering"
+                                                       : "Relations are hostile";
+    ViewTitle(ui, state, 232, 373, 23, ACCENT);
+    int until = (g->truceUntil > (int)g->tick ? g->truceUntil : f->nextRaid) - (int)g->tick;
+    if (until < 0)
+        until = 0;
+    if (!g->treaty && !f->defeated)
+        ViewText(ui,
+                 TextFormat("%s %d:%02d",
+                            g->truceUntil > (int)g->tick ? "Truce remaining" : "Next threat window",
+                            until / 600, until / 10 % 60),
+                 232, 418, 18, PAPER);
+    ViewWrapText(ui,
+                 "Their workers gather, build and train. Interrupting deliveries or production weakens their "
+                 "economy and army.",
+                 232, 482, 445, 18, PAPER);
+    ViewWrapText(
+        ui, "Use L, then click an enemy depot to plunder. Destroy their communal center to force surrender.",
+        232, 587, 445, 17, MUTED);
+    DrawLine(716, 272, 716, 661, Fade(MUTED, .25f));
+    ViewTitle(ui, "Negotiate peace", 750, 272, 24, PAPER);
+    if (ViewButton(ui, (Rectangle){750, 324, 450, 42},
+                   TextFormat("Temporary truce  /  %d food", GameTruceCost(g)), false,
+                   !g->treaty && !f->defeated && g->truceUntil <= (int)g->tick))
         ViewCommand(ui, CMD_TRUCE, 0, 0, 0);
-    if (ViewButton(ui, (Rectangle){1153, 638, 263, 40}, "Assign guards", false, true))
-        ui->panel = 1;
-    ViewText(ui, TextFormat("Food taken so far: %d", g->stolen[FOOD]), 1153, 708, 16, PAPER);
-    ViewWrapText(ui, "Guards defend near the rally flag. Injured guards withdraw. Palisades block passage; gates "
-             "keep your routes open.",
-             1153, 746, 260, 16, MUTED);
+    ViewWrapText(
+        ui, "Twelve minutes of peace. Tribute goes to the rival's stores. Attacks are blocked during peace.",
+        750, 390, 450, 18, PAPER);
+    char why[256];
+    bool ready = GameCanTreaty(g, why, sizeof(why));
+    if (ViewButton(ui, (Rectangle){750, 491, 450, 42}, "Lasting treaty  /  200 food + 30 bronze", false,
+                   ready))
+        ViewCommand(ui, CMD_TREATY, 0, 0, 0);
+    ViewWrapText(ui, why, 750, 559, 450, 18, MUTED);
 }
-
-static void Selected(ViewContext *ui)
-{
-    GameState *g = ui->g;
-    PanelBase(ui, "IN YOUR VILLAGE", ui->selectedCitizen >= 0 ? "A member of the tribe"
-                                 : ui->selected >= 0      ? "A place with purpose"
-                                                         : "The valley");
-    if (ui->selectedCitizen >= 0)
-    {
-        Citizen *c = &g->citizens[ui->selectedCitizen];
-        ViewTitle(ui, CITIZEN_NAMES[ui->selectedCitizen % 24], 1153, 195, 26, ACCENT);
-        ViewSprite(ui->selectedCitizen % 2 == 0 ? ui->braids : ui->people,
-               c->job == JOB_DELIVER ? 8
-               : c->job == JOB_FIGHT ? 12
-                                     : 0,
-               (Vector2){1280, 375}, 88, WHITE, false);
-        ViewText(ui, c->role == IDLE ? "Unassigned" : ROLE_NAMES[c->role], 1153, 415, 18, PAPER);
-        ViewText(ui, JOB_NAMES[c->job], 1153, 449, 15, MUTED);
-        ViewText(ui, TextFormat("Health  %d%%", c->hp / 10), 1153, 499, 16, PAPER);
-        ViewBar(1153, 528, 262, c->hp / 1000.0f, SAGE);
-        ViewLabel(ui, "CARRYING", 1153, 563);
-        int y = 588;
-        bool any = false;
-        for (int r = 0; r < RESOURCE_COUNT; r++)
-            if (c->carry[r])
-            {
-                ViewText(ui, TextFormat("%d %s", c->carry[r], RESOURCE_NAMES[r]), 1153, (float)y, 15, ACCENT);
-                y += 24;
-                any = true;
-            }
-        if (!any)
-            ViewText(ui, "Nothing yet", 1153, 588, 16, MUTED);
-        ViewWrapText(ui, c->hunger > 900  ? "Hungry. Restore stored food soon to avoid health loss."
-                 : c->cold > 1200 ? "Cold. Keep the hearth fueled and build enough shelter."
-                                  : "Fed and sheltered citizens slowly regain health.",
-                 1153, 668, 260, 16, MUTED);
-        if (ViewButton(ui, (Rectangle){1153, 774, 262, 40}, "Manage workforce", false, true))
-            ui->panel = 1;
-        return;
-    }
-    if (ui->selected >= 0)
-    {
-        Building *b = &g->buildings[ui->selected];
-        const BuildingDef *d = &BUILDINGS[b->type];
-        ViewTitle(ui, b->upgraded ? "Insulated hut" : d->name, 1153, 197, 25, ACCENT);
-        int sprite = b->upgraded ? 11 : b->type;
-        ViewSprite(ui->objects, sprite, (Vector2){1280, 380}, 155, WHITE, false);
-        ViewWrapText(ui, d->description, 1153, 418, 260, 15, PAPER);
-        ViewText(ui, b->complete ? "Ready" : TextFormat("Construction  %d%%", b->progress * 100 / d->labor), 1153,
-             498, 17, b->complete ? SAGE : ACCENT);
-        if (!b->complete)
-            ViewBar(1153, 532, 263, (float)b->progress / d->labor, ACCENT);
-        if (b->type == SHELTER)
-        {
-            ViewText(ui, "4 beds", 1153, 554, 17, PAPER);
-            if (!b->upgraded &&
-                ViewButton(ui, (Rectangle){1153, 600, 263, 43}, "Insulate  /  10 wood, 3 hides", false, b->complete))
-                ViewCommand(ui, CMD_UPGRADE, ui->selected, 0, 0);
-        }
-        if (b->type == FARM)
-        {
-            ViewText(ui, b->crop == 2   ? "Ready to harvest"
-                 : b->crop == 1 ? "Grain is growing"
-                                : "Waiting for a farmer",
-                 1153, 554, 17, PAPER);
-            if (b->crop == 1)
-                ViewBar(1153, 588, 263, b->cropProgress / 2400.0f, SAGE);
-        }
-        if (b->type == WORKSHOP && ViewButton(ui, (Rectangle){1153, 610, 263, 43}, "Open discoveries", false, true))
-            ui->panel = 2;
-        ViewWrapText(ui, "Select another building or citizen directly in the valley. Construction materials are "
-                 "charged once when placed.",
-                 1153, 715, 260, 16, MUTED);
-        return;
-    }
-    ViewWrapText(ui, "A river, a sheltered clearing, and enough land to begin again.", 1153, 190, 260, 15, PAPER);
-    ViewLabel(ui, "GETTING STARTED", 1153, 266);
-    ViewWrapText(ui, "1. Place two shelters near the hearth.\n2. Keep foragers and woodcutters working.\n3. Build a "
-             "workshop and assign a crafter.\n4. Discover farming after the thaw.",
-             1153, 297, 260, 15, MUTED);
-    if (ViewButton(ui, (Rectangle){1153, 521, 263, 42}, "Follow your objectives", false, true))
-        ui->panel = 0;
-}
-
 void ViewPanelDraw(ViewContext *ui)
 {
+    if (!ViewPanelOpen(ui))
+        return;
+    bool interactive = !ui->menu && !ui->help && !ui->g->lost && (!ui->g->won || ui->winSeen);
+    ui->allowInput = interactive;
+    DrawRectangle(0, WORLD_TOP, SCREEN_W, SCREEN_H - WORLD_TOP, Fade(INK, .64f));
+    Rectangle r = ViewDialogRect();
+    ViewRounded(r, (Color){33, 47, 39, 255});
+    ViewBorder(r, Fade(ACCENT, .45f));
+    ViewTitle(ui, "Settlement ledger", 232, 174, 28, PAPER);
+    if (ViewButton(ui, (Rectangle){1090, 172, 110, 34}, "Close  Esc", false, true))
+        ui->panel = -1;
+    const char *tabs[] = {"Objectives  O", "Workforce  W", "Discoveries  R", "Diplomacy"};
+    for (int i = 0; i < 4; i++)
+        if (ViewButton(ui, (Rectangle){232 + i * 246, 220, 232, 32}, tabs[i], ui->panel == i, true))
+            ui->panel = i;
     switch (ui->panel)
     {
     case 0:
@@ -252,10 +197,15 @@ void ViewPanelDraw(ViewContext *ui)
         Discoveries(ui);
         break;
     case 3:
-        RivalPanel(ui);
+        Rivals(ui);
         break;
     default:
-        Selected(ui);
         break;
+    }
+    // Feedback remains visible above the modal, including authoritative validation failures.
+    if (ui->toastTime > 0)
+    {
+        ViewRounded((Rectangle){330, 710, 780, 66}, INK);
+        ViewWrapText(ui, ui->toast, 346, 725, 748, 17, PAPER);
     }
 }

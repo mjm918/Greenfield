@@ -3,7 +3,7 @@
 #include "game.h"
 
 void WorldInit(GameState *g);
-int WorldAdjacent(const GameState *g, int x, int y, int w, int h, int from);
+int WorldAdjacent(const GameState *g, int owner, int x, int y, int w, int h, int from);
 bool WorldRoute(GameState *g, Citizen *c, int destination);
 void WorldMoveCitizen(GameState *g, Citizen *c);
 #endif
