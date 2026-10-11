@@ -6,7 +6,7 @@ bool ViewCommand(ViewContext *ui, int type, int a, int b, int c);
 void ViewSaveFolder(ViewContext *ui);
 bool ViewSave(ViewContext *ui);
 bool ViewLoad(ViewContext *ui, const char *path);
-void ViewIssueSelected(ViewContext *ui, int command, int value, UnitOrder order, bool append);
+int ViewIssueSelected(ViewContext *ui, int command, int value, UnitOrder order, bool append);
 int ViewSelectedWorkers(const ViewContext *ui);
 void ViewSelectIdle(ViewContext *ui);
 void ViewResumeConstruction(ViewContext *ui);

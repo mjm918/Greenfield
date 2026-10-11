@@ -48,7 +48,7 @@ bool ViewClick(ViewContext *ui, Rectangle r)
     return true;
 }
 
-void ViewCursor(const ViewContext *ui)
+void ViewCursor(const ViewContext *ui, Vector2 offset, float scale)
 {
     // Small code-drawn hand: no texture loading, cursor-file dependency or
     // platform scaling differences. The fingertip is the pointing hotspot.
@@ -74,10 +74,14 @@ void ViewCursor(const ViewContext *ui)
         {
             char p = rows[row][col];
             if (p != ' ')
-                DrawRectangleRec((Rectangle){x + col * pixel, y + row * pixel, pixel, pixel}, p == 'o' ? INK
-                                                                                              : p == '+'
-                                                                                                  ? ACCENT
-                                                                                                  : PAPER);
+                // Keep BeginDrawing's display scale. BeginMode2D would replace
+                // it and move the cursor away from the pointer on Retina.
+                DrawRectangleRec((Rectangle){offset.x + (x + col * pixel) * scale,
+                                             offset.y + (y + row * pixel) * scale, pixel * scale,
+                                             pixel * scale},
+                                 p == 'o'   ? INK
+                                 : p == '+' ? ACCENT
+                                            : PAPER);
         }
 }
 
@@ -95,6 +99,13 @@ void ViewBorder(Rectangle r, Color color)
     DrawLine((int)r.x, (int)r.y + 2, (int)r.x, (int)(r.y + r.height) - 3, color);
     DrawLine((int)(r.x + r.width) - 1, (int)r.y + 2, (int)(r.x + r.width) - 1, (int)(r.y + r.height) - 3,
              color);
+}
+
+void ViewSelectedBorder(Rectangle r)
+{
+    ViewBorder(r, PAPER);
+    ViewBorder((Rectangle){r.x + 1, r.y + 1, r.width - 2, r.height - 2}, ACCENT);
+    DrawRectangle(r.x + 3, r.y + 5, 3, r.height - 10, ACCENT);
 }
 
 void ViewWrapText(ViewContext *ui, const char *text, float x, float y, float width, float size, Color color)
@@ -142,6 +153,8 @@ bool ViewButton(ViewContext *ui, Rectangle r, const char *text, bool selected, b
         base = ViewMix(base, BLACK, 0.15f);
     ViewRounded(r, base);
     ViewBorder(r, selected ? ACCENT : Fade(MUTED, enabled ? 0.4f : 0.15f));
+    if (selected)
+        ViewSelectedBorder(r);
     float width = MeasureTextEx(ui->font, text, 16, 0.5f).x;
     ViewText(ui, text, r.x + (r.width - width) / 2, r.y + (r.height - 16) / 2 - 1, 16,
              enabled ? PAPER : Fade(MUTED, 0.6f));

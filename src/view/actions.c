@@ -220,12 +220,13 @@ void ViewBuildToggle(ViewContext *ui)
         return;
     }
     ui->buildMenu = !ui->buildMenu;
+    ui->buildInspect = 0;
     ui->build = -1;
     ui->panel = -1;
     ui->commandPage = ui->orderMode = 0;
 }
 
-void ViewIssueSelected(ViewContext *ui, int command, int value, UnitOrder order, bool append)
+int ViewIssueSelected(ViewContext *ui, int command, int value, UnitOrder order, bool append)
 {
     char reason[256] = {0};
     int accepted = 0;
@@ -264,4 +265,11 @@ void ViewIssueSelected(ViewContext *ui, int command, int value, UnitOrder order,
     }
     if (!accepted)
         ViewToast(ui, reason[0] ? reason : "Select citizens first.");
+    else if (command == CMD_ORDER && order.type == ORDER_GATHER)
+        ViewToast(ui,
+                  TextFormat("Gather order %s for %d worker%s.%s%s", append ? "queued" : "sent", accepted,
+                             accepted == 1 ? "" : "s",
+                             accepted < ui->selectionCount ? " Some selected units could not gather." : "",
+                             ui->speed ? "" : " Paused: press Space to start."));
+    return accepted;
 }

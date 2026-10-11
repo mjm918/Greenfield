@@ -51,11 +51,7 @@ static void Draw(ViewContext *ui)
                    (Vector2){0, 0}, 0, WHITE);
     // Draw after composition so the hand also remains visible in letterboxing.
     if (ui->showCursor)
-    {
-        BeginMode2D((Camera2D){.offset = {dst.x, dst.y}, .zoom = scale});
-        ViewCursor(ui);
-        EndMode2D();
-    }
+        ViewCursor(ui, (Vector2){dst.x, dst.y}, scale);
     EndDrawing();
 }
 

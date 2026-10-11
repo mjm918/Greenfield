@@ -89,6 +89,62 @@ static void Foundation(void)
     CHECK(!Do(g, (GameCommand){.type = CMD_BUILD, .a = WORKSHOP, .b = 24, .c = 18}));
     free(g);
 }
+static void BuildingUnlocks(void)
+{
+    GameState *g = New();
+    char why[256];
+    CHECK(!GameBuildingUnlockedFor(g, -1, WORKSHOP, why, sizeof(why)));
+    CHECK(!GameBuildingUnlockedFor(g, 0, BUILDING_COUNT, NULL, 0));
+    for (int y = 2; y < 5; y++)
+        for (int x = 2; x < 5; x++)
+        {
+            Tile *t = &g->tiles[GameTile(x, y)];
+            t->terrain = FERTILE;
+            t->node = NODE_NONE;
+            t->occupied = -1;
+        }
+    for (int owner = 0; owner < FACTION_COUNT; owner++)
+    {
+        Faction *f = &g->factions[owner];
+        f->age = ICE_AGE;
+        g->tick = 0;
+        CHECK(GameBuildingUnlockedFor(g, owner, SHELTER, NULL, 0));
+        uint64_t hash = GameHash(g);
+        CHECK(!GameBuildingUnlockedFor(g, owner, WORKSHOP, why, sizeof(why)));
+        CHECK(strstr(why, "Settled Tribe"));
+        CHECK(!GameBuildingUnlockedFor(g, owner, TRAINING_GROUND, NULL, 0));
+        CHECK(!Do(g, (GameCommand){.owner = owner, .type = CMD_BUILD, .a = WORKSHOP, .b = 2, .c = 2}));
+        CHECK(GameHash(g) == hash); // Inspecting and rejecting cannot reserve materials.
+        CHECK(!GameBuildingUnlockedFor(g, owner, GRANARY, why, sizeof(why)));
+        CHECK(strstr(why, "Food storage") && strstr(why, "Settled Tribe"));
+        CHECK(!GameBuildingUnlockedFor(g, owner, SMELTER, why, sizeof(why)));
+        CHECK(strstr(why, "Metallurgy") && strstr(why, "Farming Village"));
+        f->age = SETTLED_AGE;
+        CHECK(GameBuildingUnlockedFor(g, owner, WORKSHOP, NULL, 0));
+        CHECK(GameBuildingUnlockedFor(g, owner, TRAINING_GROUND, NULL, 0));
+        CHECK(GameCanPlaceFor(g, owner, WORKSHOP, 2, 2, NULL, 0));
+        int wood = f->stock[WOOD];
+        f->stock[WOOD] = 0;
+        CHECK(GameBuildingUnlockedFor(g, owner, WORKSHOP, NULL, 0));
+        CHECK(!GameCanPlaceFor(g, owner, WORKSHOP, 2, 2, why, sizeof(why)));
+        CHECK(strstr(why, "stored materials"));
+        f->stock[WOOD] = wood;
+        f->discovery[FOOD_STORAGE] = 1;
+        CHECK(GameBuildingUnlockedFor(g, owner, GRANARY, NULL, 0));
+        CHECK(!GameBuildingUnlockedFor(g, owner, FARM, why, sizeof(why)));
+        CHECK(strstr(why, "Farming Village"));
+        f->age = FARMING_AGE;
+        CHECK(!GameBuildingUnlockedFor(g, owner, FARM, why, sizeof(why)));
+        CHECK(strstr(why, "thaw"));
+        g->tick = WINTER_END;
+        CHECK(!GameBuildingUnlockedFor(g, owner, FARM, why, sizeof(why)));
+        CHECK(strstr(why, "Discover Farming"));
+        f->discovery[FARMING] = f->discovery[METALLURGY] = 1;
+        CHECK(GameCanPlaceFor(g, owner, FARM, 2, 2, NULL, 0));
+        CHECK(GameBuildingUnlockedFor(g, owner, SMELTER, NULL, 0));
+    }
+    free(g);
+}
 static void Orders(void)
 {
     GameState *g = New();
@@ -121,6 +177,36 @@ static void Orders(void)
         Do(g, (GameCommand){.type = CMD_ORDER, .entity = GameCitizenRef(g, id), .append = 1, .order = move});
     CHECK(!Do(g,
               (GameCommand){.type = CMD_ORDER, .entity = GameCitizenRef(g, id), .append = 1, .order = move}));
+    free(g);
+}
+static void GatherRejection(void)
+{
+    GameState *g = New();
+    int t = GameTile(25, 30);
+    g->tiles[t].node = NODE_TREE;
+    g->tiles[t].amount = 0;
+    for (int owner = 0; owner < FACTION_COUNT; owner++)
+    {
+        EntityRef ref = GameCitizenRef(g, owner ? 8 : 0);
+        CHECK(Do(g, (GameCommand){.type = CMD_ORDER,
+                                  .owner = owner,
+                                  .entity = ref,
+                                  .order = {.type = ORDER_MOVE, .x = 20, .y = 30}}));
+        GameCommand gather = {.type = CMD_ORDER,
+                              .owner = owner,
+                              .entity = ref,
+                              .order = {.type = ORDER_GATHER, .x = 25, .y = 30}};
+        uint64_t hash = GameHash(g);
+        char why[128];
+        CHECK(!GameCommandApply(g, gather, why, sizeof(why)));
+        CHECK(strstr(why, "depleted") && GameHash(g) == hash);
+        gather.append = 1;
+        CHECK(!GameCommandApply(g, gather, why, sizeof(why)) && GameHash(g) == hash);
+        g->tiles[t].amount = 5;
+        CHECK(Do(g, gather));
+        CHECK(g->citizens[ref.slot].orderCount == 2);
+        g->tiles[t].amount = 0;
+    }
     free(g);
 }
 static void ResumeConstruction(void)
@@ -666,7 +752,9 @@ static void Determinism(void)
 int main(void)
 {
     Foundation();
+    BuildingUnlocks();
     Orders();
+    GatherRejection();
     ResumeConstruction();
     IdleWorkers();
     Queues();

@@ -48,6 +48,28 @@ static inline Rectangle ViewBuildRect(const ViewContext *ui, int slot)
 {
     return (Rectangle){304 + slot % 7 * 81, ViewSelectionRect(ui).y + 12 + slot / 7 * 62, 75, 56};
 }
+static inline int ViewBuildInfoType(const ViewContext *ui)
+{
+    if (!ui->buildMenu || !ui->selectionCount || ui->menu || ui->help || ui->panel >= 0)
+        return -1;
+    if (ui->allowInput)
+        for (int i = 0; i < BUILDING_COUNT; i++)
+            if (CheckCollisionPointRec(ui->mouse, ViewBuildRect(ui, i)))
+                return i;
+    return ui->build < 0 && ui->buildInspect > 0 && ui->buildInspect <= BUILDING_COUNT ? ui->buildInspect - 1
+                                                                                       : -1;
+}
+static inline Rectangle ViewBuildInfoRect(const ViewContext *ui)
+{
+    int type = ViewBuildInfoType(ui);
+    if (type < 0)
+        return (Rectangle){0};
+    int rows = 0;
+    for (int r = 0; r < RESOURCE_COUNT; r++)
+        rows += BUILDINGS[type].cost[r] > 0;
+    float height = 166 + rows * 22;
+    return (Rectangle){16, ViewSelectionRect(ui).y - height - 8, 564, height};
+}
 // Only actual production occupies space. The simulation's queues remain the source of truth.
 static inline Rectangle ViewProductionRect(const ViewContext *ui)
 {
@@ -84,7 +106,7 @@ static inline Rectangle ViewWarningRect(void)
 }
 static inline Rectangle ViewOrderHintRect(void)
 {
-    return (Rectangle){528, 62, 420, 30};
+    return (Rectangle){528, 62, 600, 30};
 }
 static inline Rectangle ViewDialogRect(void)
 {

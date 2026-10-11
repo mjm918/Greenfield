@@ -298,6 +298,7 @@ void GameInit(GameState *g);
 void GameTick(GameState *g);
 void GameAdvance(GameState *g, double seconds, int speed, double *accumulator);
 bool GameCommandApply(GameState *g, GameCommand command, char *reason, int size);
+bool GameBuildingUnlockedFor(const GameState *g, int owner, int type, char *reason, int size);
 bool GameCanPlaceFor(const GameState *g, int owner, int type, int x, int y, char *reason, int size);
 bool GameCanAffordFor(const GameState *g, int owner, const int cost[RESOURCE_COUNT]);
 int GamePopulationFor(const GameState *g, int owner);

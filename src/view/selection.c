@@ -36,9 +36,13 @@ static void OrderButton(ViewContext *ui, int slot, const char *text, int type, c
 {
     if (Action(ui, slot, text, true, hint, NULL))
     {
-        ui->orderMode = type;
+        ui->orderMode = ui->orderMode == type ? 0 : type;
         ui->build = -1;
+        if (ui->orderMode == ORDER_GATHER)
+            ViewToast(ui, "Gather selected. Left-click a tree, berry bush, deposit or animal.");
     }
+    if (ui->orderMode == type)
+        ViewSelectedBorder(ViewCommandRect(ui, slot));
 }
 static void Orders(ViewContext *ui)
 {
@@ -267,23 +271,6 @@ void ViewSelectionDraw(ViewContext *ui)
     {
         if (ui->buildMenu)
         {
-            if (ui->build >= 0)
-            {
-                ViewTitle(ui, BUILDINGS[ui->build].name, x, y + 12, 22, ACCENT);
-                ViewCost(ui, BUILDINGS[ui->build].cost, x, y + 43, 252);
-                char why[256] = "Choose a tile. Shift repeats. Esc cancels.";
-                if (ViewWorldHit(ui) && ui->hoverTile >= 0)
-                    GameCanPlace(g, ui->build, ui->hoverTile % MAP_SIZE, ui->hoverTile / MAP_SIZE, why,
-                                 sizeof(why));
-                ViewWrapText(ui, why, x, y + 82, 252, 16, PAPER);
-            }
-            else
-            {
-                ViewTitle(ui, "Construction", x, y + 12, 22, PAPER);
-                ViewWrapText(ui, "Choose a building. Hover for costs and requirements.", x, y + 45, 252, 16,
-                             MUTED);
-                ViewText(ui, "Shift repeats / Esc cancels", x, y + 115, 16, PAPER);
-            }
             ViewBuildPalette(ui);
             return;
         }

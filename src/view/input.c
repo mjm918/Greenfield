@@ -81,6 +81,13 @@ static UnitOrder ContextOrder(ViewContext *ui)
     GameState *g = ui->g;
     int x = ui->hoverTile % MAP_SIZE, y = ui->hoverTile / MAP_SIZE;
     UnitOrder o = {.type = ORDER_MOVE, .x = x, .y = y};
+    if (ui->orderMode == ORDER_GATHER)
+    {
+        int resource = ViewResourceAt(ui);
+        return (UnitOrder){.type = ORDER_GATHER,
+                           .x = resource >= 0 ? resource % MAP_SIZE : x,
+                           .y = resource >= 0 ? resource / MAP_SIZE : y};
+    }
     int person = PersonAt(ui), building = BuildingAt(ui);
     if (person >= 0 && g->citizens[person].owner)
     {
@@ -104,15 +111,13 @@ static UnitOrder ContextOrder(ViewContext *ui)
     }
     else
     {
-        int animal = ViewAnimalAt(ui);
-        if (animal >= 0)
+        int resource = ViewResourceAt(ui);
+        if (resource >= 0)
         {
             o.type = ORDER_GATHER;
-            o.x = animal % MAP_SIZE;
-            o.y = animal / MAP_SIZE;
+            o.x = resource % MAP_SIZE;
+            o.y = resource / MAP_SIZE;
         }
-        else if (g->tiles[ui->hoverTile].node)
-            o.type = ORDER_GATHER;
     }
     return o;
 }
@@ -348,12 +353,14 @@ void ViewInput(ViewContext *ui, float dt)
         if (ui->orderMode)
         {
             UnitOrder o = ContextOrder(ui);
+            bool accepted;
             if (ui->orderMode == VIEW_ORDER_RALLY)
             {
                 char why[256];
                 bool ok = GameCommandApply(
                     g, (GameCommand){.type = CMD_RALLY, .a = o.x, .b = o.y, .order = o}, why, sizeof(why));
                 ViewToast(ui, ok ? "Rally instruction set for new recruits." : why);
+                accepted = ok;
             }
             else
             {
@@ -361,9 +368,10 @@ void ViewInput(ViewContext *ui, float dt)
                 if (o.type == ORDER_MOVE || o.type == ORDER_ATTACK_MOVE || o.type == ORDER_DEFEND ||
                     o.type == ORDER_GATHER)
                     o.targetKind = TARGET_TILE;
-                ViewIssueSelected(ui, CMD_ORDER, 0, o, shift);
+                accepted = ViewIssueSelected(ui, CMD_ORDER, 0, o, shift) > 0;
             }
-            ui->orderMode = 0;
+            if (accepted && !(ui->orderMode == ORDER_GATHER && shift))
+                ui->orderMode = 0;
             return;
         }
         ui->dragging = true;

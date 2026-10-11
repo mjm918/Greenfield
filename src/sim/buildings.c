@@ -71,24 +71,36 @@ bool BuildingsNearby(const GameState *g, int owner, int type, int x, int y, int 
     return false;
 }
 
-bool GameCanPlaceFor(const GameState *g, int owner, int type, int x, int y, char *reason, int size)
+bool GameBuildingUnlockedFor(const GameState *g, int owner, int type, char *reason, int size)
 {
     if (owner < 0 || owner >= FACTION_COUNT || type < 0 || type >= BUILDING_COUNT)
         return Reject(reason, size, "Unknown building.");
+    if (type == FARM && g->factions[owner].age < FARMING_AGE)
+        return Reject(reason, size, "Advance to Farming Village first.");
+    if (type == FARM && g->tick < WINTER_END)
+        return Reject(reason, size, "Wait for the winter thaw.");
+    if (type == FARM && !g->factions[owner].discovery[FARMING])
+        return Reject(reason, size, "Discover Farming at a staffed workshop.");
+    if (type == GRANARY && !g->factions[owner].discovery[FOOD_STORAGE])
+        return Reject(reason, size, "Requires Food storage research at a Settled Tribe workshop.");
+    if ((type == WORKSHOP || type == TRAINING_GROUND) && g->factions[owner].age < SETTLED_AGE)
+        return Reject(reason, size, "Advance to Settled Tribe first.");
+    if (type == SMELTER && !g->factions[owner].discovery[METALLURGY])
+        return Reject(reason, size, "Requires Metallurgy research in the Farming Village age.");
+    if (reason && size > 0)
+        snprintf(reason, (size_t)size, "Unlocked");
+    return true;
+}
+
+bool GameCanPlaceFor(const GameState *g, int owner, int type, int x, int y, char *reason, int size)
+{
+    if (!GameBuildingUnlockedFor(g, owner, type, reason, size))
+        return false;
     int slots = 0;
     for (int i = 0; i < g->buildingCount; i++)
         slots += g->buildings[i].alive;
     if (slots >= MAX_BUILDINGS)
         return Reject(reason, size, "The valley's building limit is reached.");
-    if (type == FARM && (g->factions[owner].age < FARMING_AGE || !g->factions[owner].discovery[FARMING] ||
-                         g->tick < WINTER_END))
-        return Reject(reason, size, "Wait for the thaw and discover Farming at a staffed workshop.");
-    if (type == GRANARY && !g->factions[owner].discovery[FOOD_STORAGE])
-        return Reject(reason, size, "Discover Food storage at a staffed workshop first.");
-    if ((type == WORKSHOP || type == TRAINING_GROUND) && g->factions[owner].age < SETTLED_AGE)
-        return Reject(reason, size, "Advance to Settled Tribe first.");
-    if (type == SMELTER && !g->factions[owner].discovery[METALLURGY])
-        return Reject(reason, size, "Discover Metallurgy first.");
     const BuildingDef *d = &BUILDINGS[type];
     if (x < 0 || y < 0 || x > MAP_SIZE - d->w || y > MAP_SIZE - d->h)
         return Reject(reason, size, "Keep the whole footprint inside the valley.");

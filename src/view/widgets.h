@@ -12,10 +12,11 @@ bool ViewHit(ViewContext *ui, Rectangle r);
 bool ViewClick(ViewContext *ui, Rectangle r);
 void ViewRounded(Rectangle r, Color color);
 void ViewBorder(Rectangle r, Color color);
+void ViewSelectedBorder(Rectangle r);
 void ViewWrapText(ViewContext *ui, const char *text, float x, float y, float width, float size, Color color);
 bool ViewButton(ViewContext *ui, Rectangle r, const char *text, bool selected, bool enabled);
 void ViewToast(ViewContext *ui, const char *text);
 void ViewBar(float x, float y, float width, float value, Color color);
 void ViewCost(ViewContext *ui, const int *cost, float x, float y, float width);
-void ViewCursor(const ViewContext *ui);
+void ViewCursor(const ViewContext *ui, Vector2 offset, float scale);
 #endif

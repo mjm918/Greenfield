@@ -175,3 +175,89 @@ background workers or runtime dependencies were added.
 - The release build passed all **10/10 CTest tests**, run as six headless tests and four graphics tests. The rendered input/HUD executable reports **164 checks, zero failures**. Simulation, headless input and rendered HUD tests also passed **3/3 under AddressSanitizer and UndefinedBehaviorSanitizer**. The original reference capture still has zero differing pixels out of 1,441,170.
 - Inspected `build/evidence/controls-resume.png` and `controls-hand-grab.png` after the Mac was unlocked. They show the compact Resume/Cancel tray and the open/closed hand states. These are macOS GPU captures with controlled input, not interaction with the existing player session or a new human campaign playthrough.
 - Reused the command, jobs, construction, economy, camera, selection and UI palette owners. New surfaces are derived idle queries, a Resume UI action, transient gesture fields and a code-drawn cursor. Searches confirmed no second idle flag, material-charge path, construction operation or persistent camera state. This controls change adds no asset reads, save fields, filesystem writes, network calls, dependency or background task.
+
+### Retina cursor correction
+
+The hand overlay used `BeginMode2D` after window composition, replacing raylib's
+Retina display scale and drawing the hand away from its pointer hotspot. The
+existing cursor renderer now takes the viewport offset and scale explicitly,
+preserving the window transform. It still uses the same hand, closed-grip pose,
+focus/visibility lifecycle and letterboxing behavior; there is no second cursor
+renderer, new asset, saved field or runtime I/O.
+
+The rendered HUD test now opens with the same high-DPI flag as the game and reads
+the actual window framebuffer before swapping buffers. It checks the palm at the
+pointer location for both poses, at full and reduced scale with an offset.
+`build/evidence/cursor-window.png` records the Retina-window check, in addition to
+the existing canvas captures. All 173 input/HUD checks pass, including under
+AddressSanitizer and UndefinedBehaviorSanitizer. The five focused input, HUD,
+game-capture, artwork and reference tests pass. The game was restarted and its
+saved village restored; live mouse-hover verification remains unconfirmed because
+native coordinate actions returned `noWindowsAvailable` even though keyboard
+actions and window screenshots worked.
+
+### Building availability and selection feedback
+
+The existing 142px construction tray now labels each building Ready, Missing or
+Locked. Hovering opens a requirements card; clicking an unavailable building pins
+that card without arming placement or reserving resources. The card names the
+required age/research and lists each resource's cost, stored amount and exact
+shortfall. Its height follows the number of resources. Drawing and map hit tests
+share its bounds, so inspecting it cannot select or move something underneath.
+
+`GameBuildingUnlockedFor` extracts the existing gates from the building owner and
+is called by both placement validation and the palette. Costs and available stock
+still come from `BUILDINGS` and the faction economy. There are no UI copies of the
+unlock rules, extra charging paths, or changed balance requirements. The only new
+state is a temporary inspected-building selection; it is not saved. Existing
+sprites, Source Sans 3, widgets and selection handles are reused. Selected buttons
+have a contrasting border, buildings have outlined footprints, and citizens have
+rings and overhead markers drawn after sprites with a minimum visible screen size.
+The former thin selection drawing was removed rather than kept as a second path.
+No assets, dependencies, runtime I/O, network calls, storage writes or background
+work were added.
+
+The six focused release tests pass: simulation, headless view input, rendered HUD,
+game capture, artwork and reference fidelity. The simulation reports 441 checks;
+the rendered input/HUD run reports 189 checks, all passing. Simulation, input and
+rendered HUD also pass under AddressSanitizer and UndefinedBehaviorSanitizer.
+Tests cover both factions' age/research/thaw gates, unchanged state on rejection,
+locked and unaffordable clicks, exact-stock readiness, requirements-card hit
+blocking, and visible selection strokes at close and overview zoom. Inspected
+macOS GPU fixtures: `build/evidence/build-locked.png`, `build-missing.png`,
+`build-ready.png`, `selection-citizens.png`, `selection-overview.png` and
+`selection-building.png`. These are controlled fixtures, not a live player-session
+check or a new campaign playthrough. The already-running player process must be
+reopened to use the rebuilt executable.
+
+### Gather targeting and acknowledgement
+
+Gather now retains a selected button border and a specific left-click targeting
+prompt. Hovering a resource outlines its ground footprint. Clicking the command
+again, right-clicking or pressing Escape cancels targeting; an invalid target
+leaves targeting active with the existing simulation rejection message. A
+successful order reports the accepted worker count and whether it was queued,
+including a Space-to-resume reminder while paused. Shift keeps Gather active for
+further queued targets. Depleted resources are rejected by `OrdersApply` before
+clearing or appending orders, rather than accepting an order that immediately ends.
+
+`ViewResourceAt` shares the existing resource sprite geometry in `view/world.c`
+and composes moving-animal picking. Both explicit Gather and contextual right-click
+use it, fixing clicks on canopies that project onto unrelated ground tiles.
+`ViewIssueSelected` now returns its already-computed acceptance count so input can
+retain a rejected target mode. Existing callers still use the same command path.
+The existing jobs and economy owners continue to perform work and delivery; there
+is no parallel gathering operation, selection state, saved field, new asset,
+filesystem operation, network call or background work. Picking scans the fixed
+tile array on a contextual click or while showing a Gather hover target; it adds
+no persistent cache or simulation work.
+
+Eight release checks passed across simulation, view input, rendered HUD, treaty
+and military campaigns, reference fidelity, game capture and artwork. The three
+simulation/input/HUD sanitizer tests passed too (453 simulation checks and 209
+rendered view checks). The new HUD test follows the real button-to-canopy click,
+then executes worker jobs until wood is delivered. It also covers invalid-target
+retry, depleted targets, metallurgy rejection, right-click picking, paused
+acknowledgement, Shift queueing and cancellation. Inspected macOS GPU captures
+`build/evidence/gather-target.png` and `gather-confirmed.png`. These remain controlled
+tests; the running player session has not been restarted or changed.

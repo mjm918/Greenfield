@@ -1,4 +1,6 @@
 #include "game.h"
+#include "raylib.h"
+#include "rlgl.h"
 #include "sim/jobs.h"
 #include "sim/wildlife.h"
 #include "view/actions.h"
@@ -250,8 +252,8 @@ static void CaptureControls(ViewContext *u, const char *path)
     ViewHeader(u);
     ViewSelectionDraw(u);
     ViewWorldHUD(u);
-    ViewCursor(u);
     EndMode2D();
+    ViewCursor(u, (Vector2){0, 0}, RENDER_SCALE);
     EndTextureMode();
     Image image = LoadImageFromTexture(u->canvas.texture);
     ImageFlipVertical(&image);
@@ -331,6 +333,212 @@ static void RenderControlChecks(ViewContext *u)
         JobsUpdate(g);
     CHECK(g->buildings[site].complete && g->factions[0].reserved[WOOD] == 0);
 }
+static void BuildFeedbackChecks(ViewContext *u)
+{
+    GameState *g = u->g;
+    GameInit(g);
+    u->menu = u->help = u->buildMenu = false;
+    u->panel = u->selected = u->build = -1;
+    u->commandPage = u->orderMode = 0;
+    u->toastTime = 0;
+    u->selection[0] = GameCitizenRef(g, 0);
+    u->selectionCount = 1;
+    u->camera = (Camera2D){.offset = {720, 400}, .target = ViewIso(23, 23), .zoom = 1.3f};
+    HudRectClick(u, ViewCommandRect(u, 0));
+    uint64_t hash = GameHash(g);
+    HudRectClick(u, ViewBuildRect(u, WORKSHOP));
+    CHECK(u->build == -1 && u->buildInspect == WORKSHOP + 1);
+    CHECK(ViewBuildInfoType(u) == WORKSHOP && GameHash(g) == hash);
+    Rectangle info = ViewBuildInfoRect(u);
+    u->mouse = (Vector2){info.x + 50, info.y + 100};
+    CHECK(!ViewWorldHit(u)); // Pinned requirements never click through to the map.
+    CaptureControls(u, "evidence/build-locked.png");
+    g->factions[0].age = SETTLED_AGE;
+    g->factions[0].stock[WOOD] = 9;
+    g->factions[0].stock[STONE] = 7;
+    hash = GameHash(g);
+    HudRectClick(u, ViewBuildRect(u, WORKSHOP));
+    CHECK(u->build == -1 && u->buildInspect == WORKSHOP + 1 && GameHash(g) == hash);
+    CaptureControls(u, "evidence/build-missing.png");
+    g->factions[0].stock[WOOD] = 30;
+    g->factions[0].stock[STONE] = 12;
+    hash = GameHash(g);
+    HudRectClick(u, ViewBuildRect(u, WORKSHOP));
+    CHECK(u->build == WORKSHOP && GameHash(g) == hash);
+    u->mouse = (Vector2){900, 500};
+    CHECK(ViewBuildInfoType(u) == -1 && ViewBuildInfoRect(u).width == 0);
+    CHECK(ViewWorldHit(u));
+    CaptureControls(u, "evidence/build-ready.png");
+    HudRectClick(u, ViewBuildRect(u, BUILDING_COUNT));
+    CHECK(!u->buildMenu && u->buildInspect == 0 && ViewBuildInfoRect(u).width == 0);
+
+    // Selection stays visible through foreground art and at overview zoom.
+    const float zooms[] = {1.3f, .3f};
+    for (int i = 0; i < 2; i++)
+    {
+        u->camera.zoom = zooms[i];
+        u->selectionCount = 2;
+        u->selection[0] = GameCitizenRef(g, 0);
+        u->selection[1] = GameCitizenRef(g, 1);
+        g->tick = i ? WINTER_END + 2400 : 0;
+        CaptureControls(u, i ? "evidence/selection-overview.png" : "evidence/selection-citizens.png");
+        Citizen *c = &g->citizens[0];
+        Vector2 foot = ViewIso(c->x / 256.f + .5f, c->y / 256.f + .5f);
+        foot.y += 5;
+        Vector2 screen = GetWorldToScreen2D(foot, u->camera);
+        // A selected citizen has a clearly visible gold stroke to the right of its feet.
+        float radius = fmaxf(18 * zooms[i], 11);
+        Image image = LoadImageFromTexture(u->canvas.texture);
+        ImageFlipVertical(&image);
+        int gold = 0;
+        for (int y = -3; y <= 3; y++)
+            for (int x = -3; x <= 3; x++)
+            {
+                Color p =
+                    GetImageColor(image, (screen.x + radius) * RENDER_SCALE + x, screen.y * RENDER_SCALE + y);
+                gold += p.r == ACCENT.r && p.g == ACCENT.g && p.b == ACCENT.b;
+            }
+        CHECK(gold >= 5);
+        UnloadImage(image);
+    }
+    u->camera.zoom = 1.3f;
+    ViewSelectBuilding(u, g->factions[0].center);
+    CaptureControls(u, "evidence/selection-building.png");
+}
+static void GatherFeedbackChecks(ViewContext *u)
+{
+    GameState *g = u->g;
+    GameInit(g);
+    g->factions[1].aiEnabled = 0;
+    for (int i = 0; i < g->citizenCount; i++)
+    {
+        JobsReset(&g->citizens[i]);
+        g->citizens[i].role = IDLE;
+    }
+    // Isolate an actual sprite from surrounding resources: clicking its canopy
+    // must resolve to its home tile, not the empty ground projected behind it.
+    for (int y = 27; y <= 35; y++)
+        for (int x = 24; x <= 34; x++)
+        {
+            g->tiles[GameTile(x, y)].node = NODE_NONE;
+            g->tiles[GameTile(x, y)].amount = 0;
+        }
+    int target = GameTile(25, 30);
+    g->tiles[target].node = NODE_TREE;
+    g->tiles[target].amount = 100;
+    Citizen *c = &g->citizens[0];
+    c->x = 24 * 256;
+    c->y = 30 * 256;
+    u->menu = u->help = u->buildMenu = false;
+    u->selected = u->build = u->panel = -1;
+    u->commandPage = u->orderMode = 0;
+    u->speed = 0;
+    u->toastTime = 0;
+    u->selection[0] = GameCitizenRef(g, 0);
+    u->selectionCount = 1;
+    u->camera = (Camera2D){.offset = {720, 420}, .target = ViewIso(25.5f, 30.5f), .zoom = 1.5f};
+    uint64_t hash = GameHash(g);
+    HudRectClick(u, ViewCommandRect(u, 1));
+    CHECK(u->orderMode == ORDER_GATHER && strstr(u->toast, "Left-click"));
+    CHECK(GameHash(g) == hash); // Choosing a command waits for a target.
+    Point(u, 32, 32);
+    pressedMouse = MOUSE_BUTTON_LEFT;
+    ViewInput(u, .016f);
+    pressedMouse = -1;
+    CHECK(u->orderMode == ORDER_GATHER && c->orderCount == 0 && !u->dragging);
+    CHECK(strstr(u->toast, "natural resource"));
+    Vector2 canopy = ViewIso(25.5f, 30.5f);
+    canopy.y -= 30;
+    u->mouse = GetWorldToScreen2D(canopy, u->camera);
+    Vector2 tile = ViewTileAt(u, u->mouse);
+    u->hoverTile = GameTile(floorf(tile.x), floorf(tile.y));
+    CHECK(u->hoverTile != target && g->tiles[u->hoverTile].node == NODE_NONE);
+    CHECK(ViewResourceAt(u) == target);
+    u->toastTime = 0;
+    CaptureControls(u, "evidence/gather-target.png");
+    pressedMouse = MOUSE_BUTTON_LEFT;
+    ViewInput(u, .016f);
+    pressedMouse = -1;
+    CHECK(!u->orderMode && c->orderCount == 1 && c->orders[0].type == ORDER_GATHER);
+    CHECK(GameTile(c->orders[0].x, c->orders[0].y) == target);
+    CHECK(strstr(u->toast, "1 worker") && strstr(u->toast, "Paused"));
+    CaptureControls(u, "evidence/gather-confirmed.png");
+    int wood = g->factions[0].stock[WOOD];
+    for (int t = 0; t < 1000 && g->factions[0].stock[WOOD] == wood; t++)
+    {
+        g->tick++;
+        JobsUpdate(g);
+    }
+    CHECK(c->role == WOODCUTTER && g->factions[0].produced[WOOD] > 0);
+    CHECK(g->factions[0].stock[WOOD] > wood && g->tiles[target].amount < 100);
+    // Right-click uses exactly the same sprite picker and acceptance feedback.
+    u->speed = 1;
+    u->mouse = GetWorldToScreen2D(canopy, u->camera);
+    pressedMouse = MOUSE_BUTTON_RIGHT;
+    ViewInput(u, .016f);
+    pressedMouse = -1;
+    CHECK(c->orderCount == 1 && GameTile(c->orders[0].x, c->orders[0].y) == target);
+    CHECK(strstr(u->toast, "sent") && !strstr(u->toast, "Paused"));
+    HudRectClick(u, ViewCommandRect(u, 1));
+    u->mouse = GetWorldToScreen2D(canopy, u->camera);
+    heldKey = KEY_LEFT_SHIFT;
+    pressedMouse = MOUSE_BUTTON_LEFT;
+    ViewInput(u, .016f);
+    pressedMouse = -1;
+    heldKey = 0;
+    CHECK(u->orderMode == ORDER_GATHER && c->orderCount == 2 && strstr(u->toast, "queued"));
+    Key(u, KEY_ESCAPE);
+    CHECK(!u->orderMode && c->orderCount == 2);
+    HudRectClick(u, ViewCommandRect(u, 1));
+    HudRectClick(u, ViewCommandRect(u, 1));
+    CHECK(!u->orderMode); // Clicking the highlighted command cancels targeting.
+    HudRectClick(u, ViewCommandRect(u, 1));
+    u->mouse = GetWorldToScreen2D(canopy, u->camera);
+    g->tiles[target].amount = 0;
+    pressedMouse = MOUSE_BUTTON_LEFT;
+    ViewInput(u, .016f);
+    pressedMouse = -1;
+    CHECK(u->orderMode == ORDER_GATHER && c->orderCount == 2 && strstr(u->toast, "depleted"));
+    g->tiles[target].amount = 20;
+    g->tiles[target].node = NODE_ORE;
+    // Aim within the shorter deposit sprite.
+    Point(u, 25.4f, 30.4f);
+    pressedMouse = MOUSE_BUTTON_LEFT;
+    ViewInput(u, .016f);
+    pressedMouse = -1;
+    CHECK(u->orderMode == ORDER_GATHER && c->orderCount == 2 && strstr(u->toast, "Metallurgy"));
+    Key(u, KEY_ESCAPE);
+}
+static void CursorWindowChecks(ViewContext *u)
+{
+    // Exercise the real window framebuffer: render-texture captures cannot
+    // catch a cursor transform that discards raylib's Retina screen scale.
+    Vector2 offsets[] = {{0, 0}, {80, 50}};
+    float scales[] = {1, .72f};
+    u->mouse = (Vector2){640, 360};
+    for (int i = 0; i < 2; i++)
+        for (int grabbing = 0; grabbing < 2; grabbing++)
+        {
+            u->panning = grabbing;
+            BeginDrawing();
+            ClearBackground(BLACK);
+            ViewCursor(u, offsets[i], scales[i]);
+            rlDrawRenderBatchActive();
+            Image screen = LoadImageFromScreen();
+            EndDrawing();
+            float dx = screen.width / (float)SCREEN_W, dy = screen.height / (float)SCREEN_H;
+            // Both poses contain paper at the center of the palm, below the hotspot.
+            int x = (int)((offsets[i].x + (u->mouse.x + .6f) * scales[i]) * dx);
+            int y = (int)((offsets[i].y + (u->mouse.y + 18) * scales[i]) * dy);
+            Color palm = GetImageColor(screen, x, y);
+            CHECK(palm.r == PAPER.r && palm.g == PAPER.g && palm.b == PAPER.b);
+            CHECK(screen.width == GetRenderWidth() && screen.height == GetRenderHeight());
+            if (!i && !grabbing)
+                CHECK(ExportImage(screen, "evidence/cursor-window.png"));
+            UnloadImage(screen);
+        }
+    ViewCancelDrag(u);
+}
 static void RenderChecks(ViewContext *u)
 {
     GameState *g = u->g;
@@ -341,7 +549,7 @@ static void RenderChecks(ViewContext *u)
     u->selection[0] = GameCitizenRef(g, 0);
     u->selectionCount = 1;
     SetTraceLogLevel(LOG_WARNING);
-    SetConfigFlags(FLAG_WINDOW_HIDDEN);
+    SetConfigFlags(FLAG_WINDOW_HIDDEN | FLAG_WINDOW_HIGHDPI);
     InitWindow(SCREEN_W, SCREEN_H, "Greenfield HUD verification");
     CHECK(IsWindowReady());
     if (!IsWindowReady())
@@ -421,6 +629,9 @@ static void RenderChecks(ViewContext *u)
         CHECK(MeasureTextEx(u->font, AGES[i].name, 16, .5f).x <= 124);
     RenderAnimationChecks(u);
     RenderControlChecks(u);
+    BuildFeedbackChecks(u);
+    GatherFeedbackChecks(u);
+    CursorWindowChecks(u);
     ViewAssetsUnload(u);
     CloseWindow();
 }

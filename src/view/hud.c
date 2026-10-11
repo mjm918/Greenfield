@@ -6,6 +6,7 @@
 #include "widgets.h"
 #include "world.h"
 #include <math.h>
+#include <stdio.h>
 
 bool ViewHasWarning(const ViewContext *ui)
 {
@@ -18,6 +19,7 @@ bool ViewWorldPointHit(const ViewContext *ui, Vector2 point)
     return !ViewPanelOpen(ui) && CheckCollisionPointRec(point, ViewWorldRect()) &&
            !CheckCollisionPointRec(point, ViewObjectiveRect()) &&
            !CheckCollisionPointRec(point, ViewSelectionRect(ui)) &&
+           !CheckCollisionPointRec(point, ViewBuildInfoRect(ui)) &&
            !CheckCollisionPointRec(point, ViewMapRect()) &&
            !CheckCollisionPointRec(point, ViewProductionRect(ui)) &&
            !(ui->orderMode && CheckCollisionPointRec(point, ViewOrderHintRect())) &&
@@ -100,35 +102,103 @@ void ViewBuildPalette(ViewContext *ui)
     for (int i = 0; i < BUILDING_COUNT; i++)
     {
         Rectangle r = ViewBuildRect(ui, i);
-        bool hover = ViewHit(ui, r);
-        ViewRounded(r, ui->build == i ? (Color){75, 94, 62, 255}
-                       : hover        ? (Color){56, 71, 53, 255}
-                                      : (Color){41, 55, 43, 255});
-        ViewBorder(r, ui->build == i ? ACCENT : Fade(MUTED, .3f));
+        bool hover = ui->allowInput && ViewHit(ui, r);
+        bool unlocked = GameBuildingUnlockedFor(ui->g, 0, i, NULL, 0);
+        bool affordable = GameCanAfford(ui->g, BUILDINGS[i].cost);
+        if (ViewClick(ui, r))
+        {
+            ui->build = unlocked && affordable && ui->build != i ? i : -1;
+            ui->buildInspect = i + 1;
+            ui->orderMode = 0;
+        }
+        bool selected = ui->build == i || (ui->build < 0 && ui->buildInspect == i + 1);
+        Color base = selected ? (Color){75, 94, 62, 255} : (Color){41, 55, 43, 255};
+        if (!unlocked)
+            base = ViewMix(base, INK, .6f);
+        if (hover)
+            base = ViewMix(base, PAPER, IsMouseButtonDown(MOUSE_BUTTON_LEFT) ? .05f : .12f);
+        ViewRounded(r, base);
+        ViewBorder(r, Fade(MUTED, .4f));
+        if (selected)
+            ViewSelectedBorder(r);
         Atlas atlas = i >= TRAINING_GROUND ? ui->bronze : ui->objects;
         int index = i >= TRAINING_GROUND ? i - TRAINING_GROUND : i;
         Rectangle src = atlas.rect[index];
-        float width = src.height > 0 ? ViewMinF(32, 32 * src.width / src.height) : 32;
-        ViewSprite(atlas, index, (Vector2){r.x + 37, r.y + 34}, width, WHITE, false);
+        float width = src.height > 0 ? ViewMinF(24, 24 * src.width / src.height) : 24;
+        ViewSprite(atlas, index, (Vector2){r.x + 37, r.y + 25}, width, unlocked ? WHITE : MUTED, false);
         float w = MeasureTextEx(ui->font, names[i], 14, .5f).x;
-        ViewText(ui, names[i], r.x + (r.width - w) / 2, r.y + 37, 14, PAPER);
-        if (ViewClick(ui, r))
-        {
-            ui->build = ui->build == i ? -1 : i;
-            ui->orderMode = 0;
-        }
-        if (hover && ui->allowInput)
-        {
-            Rectangle h = ViewCommandHintRect(ui);
-            ViewRounded(h, INK);
-            ViewBorder(h, Fade(ACCENT, .35f));
-            ViewTitle(ui, BUILDINGS[i].name, h.x + 12, h.y + 10, 19, ACCENT);
-            ViewWrapText(ui, BUILDINGS[i].description, h.x + 12, h.y + 37, h.width - 24, 16, PAPER);
-            ViewCost(ui, BUILDINGS[i].cost, h.x + 12, h.y + 87, h.width - 24);
-        }
+        ViewText(ui, names[i], r.x + (r.width - w) / 2, r.y + 26, 14, PAPER);
+        const char *status = !unlocked ? "Locked" : !affordable ? "Missing" : "Ready";
+        Color statusColor = !unlocked ? MUTED : !affordable ? ACCENT : SAGE;
+        w = MeasureTextEx(ui->font, status, 14, .5f).x;
+        ViewText(ui, status, r.x + (r.width - w) / 2, r.y + 41, 14, statusColor);
     }
     if (ViewButton(ui, ViewBuildRect(ui, BUILDING_COUNT), "Back", false, true))
+    {
         ViewBuildToggle(ui);
+        return;
+    }
+    float x = ViewSelectionRect(ui).x + 12, y = ViewSelectionRect(ui).y;
+    int inspect = ui->build >= 0 ? ui->build : ui->buildInspect - 1;
+    ViewTitle(ui, inspect >= 0 ? BUILDINGS[inspect].name : "Construction", x, y + 12, 22, PAPER);
+    char why[256] = "Choose a building. Locked and missing-material buildings show their requirements.";
+    if (inspect >= 0)
+    {
+        if (GameBuildingUnlockedFor(ui->g, 0, inspect, why, sizeof(why)))
+        {
+            if (!GameCanAfford(ui->g, BUILDINGS[inspect].cost))
+                snprintf(why, sizeof(why), "Missing stored materials. Hover this building for amounts.");
+            else if (ui->build >= 0)
+            {
+                snprintf(why, sizeof(why), "Choose a tile. Shift repeats.");
+                if (ViewWorldHit(ui) && ui->hoverTile >= 0)
+                    GameCanPlace(ui->g, inspect, ui->hoverTile % MAP_SIZE, ui->hoverTile / MAP_SIZE, why,
+                                 sizeof(why));
+            }
+            else
+                snprintf(why, sizeof(why), "Materials ready. Click the building to place it.");
+        }
+    }
+    ViewWrapText(ui, why, x, y + 43, 252, 16, PAPER);
+    ViewText(ui, "Hover for details / Esc cancels", x, y + 119, 14, MUTED);
+
+    int detail = ViewBuildInfoType(ui);
+    if (detail < 0)
+        return;
+    Rectangle h = ViewBuildInfoRect(ui);
+    const BuildingDef *d = &BUILDINGS[detail];
+    bool unlocked = GameBuildingUnlockedFor(ui->g, 0, detail, why, sizeof(why));
+    bool affordable = GameCanAfford(ui->g, d->cost);
+    ViewRounded(h, INK);
+    ViewBorder(h, PAPER);
+    ViewTitle(ui, d->name, h.x + 12, h.y + 10, 21, PAPER);
+    ViewText(ui,
+             !unlocked     ? "LOCKED"
+             : !affordable ? "MISSING MATERIALS"
+                           : "READY TO BUILD",
+             h.x + 350, h.y + 13, 16, unlocked && affordable ? SAGE : ACCENT);
+    ViewText(ui, d->description, h.x + 12, h.y + 39, 16, MUTED);
+    ViewWrapText(ui, unlocked ? "Unlocked. Materials must be delivered before building." : why, h.x + 12,
+                 h.y + 64, h.width - 24, 17, unlocked ? PAPER : ACCENT);
+    ViewText(ui, "Resource", h.x + 12, h.y + 109, 15, MUTED);
+    ViewText(ui, "Cost", h.x + 244, h.y + 109, 15, MUTED);
+    ViewText(ui, "Stored", h.x + 330, h.y + 109, 15, MUTED);
+    ViewText(ui, "Missing", h.x + 434, h.y + 109, 15, MUTED);
+    int row = 0;
+    for (int resource = 0; resource < RESOURCE_COUNT; resource++)
+        if (d->cost[resource])
+        {
+            int stock = ui->g->factions[0].stock[resource];
+            int missing = d->cost[resource] - stock;
+            float yy = h.y + 130 + row++ * 22;
+            ViewText(ui, RESOURCE_NAMES[resource], h.x + 12, yy, 17, PAPER);
+            ViewText(ui, TextFormat("%d", d->cost[resource]), h.x + 244, yy, 17, PAPER);
+            ViewText(ui, TextFormat("%d", stock), h.x + 330, yy, 17, missing > 0 ? ACCENT : PAPER);
+            ViewTitle(ui, missing > 0 ? TextFormat("%d more", missing) : "Enough", h.x + 434, yy, 17,
+                      missing > 0 ? ACCENT : SAGE);
+        }
+    ViewText(ui, "Stored excludes goods being carried or reserved for other projects.", h.x + 12,
+             h.y + h.height - 24, 14, MUTED);
 }
 
 static void MiniMap(ViewContext *ui)
@@ -221,9 +291,12 @@ void ViewWorldHUD(ViewContext *ui)
     {
         Rectangle r = ViewOrderHintRect();
         ViewRounded(r, INK);
+        ViewBorder(r, ACCENT);
         ViewText(ui,
                  ui->orderMode == VIEW_ORDER_RALLY ? "Choose a rally point / Esc cancels"
-                                                   : "Choose a target / Shift queues / Esc cancels",
+                 : ui->orderMode == ORDER_GATHER
+                     ? "Gather: left-click a resource / Shift queues / Esc cancels"
+                     : "Choose a target / Shift queues / Esc cancels",
                  r.x + 12, r.y + 7, 16, PAPER);
     }
     if (ui->toastTime > 0)

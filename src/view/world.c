@@ -2,6 +2,7 @@
 #include "animation.h"
 #include "assets.h"
 #include "context.h"
+#include "hud.h"
 #include "layout.h"
 #include "raymath.h"
 #include "widgets.h"
@@ -60,6 +61,46 @@ static bool Visible(const ViewContext *ui, float x, float y, float margin)
     p.y = (p.y - ui->camera.target.y) * ui->camera.zoom + ui->camera.offset.y;
     float pad = margin * ui->camera.zoom;
     return p.x > -pad && p.x < SCREEN_W + pad && p.y > WORLD_TOP - pad && p.y < SCREEN_H + pad;
+}
+
+static Vector2 ResourceVisual(int tile, int node, int *sprite, float *width)
+{
+    Vector2 foot = ViewIso(tile % MAP_SIZE + .5f, tile / MAP_SIZE + .5f);
+    foot.y += 8;
+    *sprite = node == NODE_TREE ? 12 : (node == NODE_STONE || node == NODE_ORE) ? 13 : 14;
+    *width = node == NODE_TREE ? 64 : 50;
+    return foot;
+}
+
+int ViewResourceAt(const ViewContext *ui)
+{
+    int animal = ViewAnimalAt(ui);
+    if (animal >= 0)
+        return animal;
+    Vector2 mouse = GetScreenToWorld2D(ui->mouse, ui->camera);
+    int best = -1, depth = -1;
+    for (int t = 0; t < TILE_COUNT; t++)
+    {
+        const Tile *tile = &ui->g->tiles[t];
+        if (!tile->node || tile->node == NODE_GAME)
+            continue;
+        int sprite, d = t % MAP_SIZE + t / MAP_SIZE;
+        float width;
+        Vector2 foot = ResourceVisual(t, tile->node, &sprite, &width);
+        Rectangle src = ui->objects.rect[sprite];
+        if (src.width <= 0)
+            continue;
+        float height = width * src.height / src.width;
+        if (d >= depth &&
+            CheckCollisionPointRec(mouse, (Rectangle){foot.x - width / 2, foot.y - height, width, height}))
+        {
+            best = t;
+            depth = d;
+        }
+    }
+    if (best >= 0)
+        return best;
+    return ui->hoverTile >= 0 && ui->g->tiles[ui->hoverTile].node ? ui->hoverTile : -1;
 }
 
 static void TerrainDraw(ViewContext *ui)
@@ -191,8 +232,6 @@ static void BuildingDraw(ViewContext *ui, int id)
     float width;
     Atlas atlas;
     Vector2 foot = ViewBuildingVisual(ui, b, &atlas, &index, &width);
-    if (id == ui->selected)
-        DiamondLine(b->x, b->y, d->w, d->h, ACCENT, 2.5f);
     if (!b->complete)
     {
         DiamondLine(b->x, b->y, d->w, d->h, Fade(ACCENT, 0.8f), 2);
@@ -249,12 +288,6 @@ static void PersonDraw(ViewContext *ui, int id, bool raider)
     foot.y += 5;
     Rectangle bounds = ViewPoseBounds(pose, foot, 42.5f);
     float h = foot.y - bounds.y;
-    bool selected = false;
-    for (int j = 0; j < ui->selectionCount; j++)
-        if (ui->selection[j].slot == id)
-            selected = true;
-    if (!raider && selected)
-        DrawEllipseLines((int)foot.x, (int)foot.y, 13, 5, ACCENT);
     ViewPoseDraw(pose, foot, 42.5f, raider ? (Color){245, 158, 137, 255} : WHITE);
     if (c->unitType)
     {
@@ -280,6 +313,45 @@ static void PersonDraw(ViewContext *ui, int id, bool raider)
     if (!raider && job == JOB_IDLE && g->citizens[id].role == IDLE)
     {
         DrawCircle((int)foot.x, (int)(foot.y - h - 5), 2, ACCENT);
+    }
+}
+
+static void SelectionDraw(ViewContext *ui)
+{
+    // Draw after sprites so foliage cannot hide selection. Keep strokes and
+    // markers legible at overview zoom without changing sprite scale or depth.
+    float pixel = 1 / ui->camera.zoom;
+    const Building *b = ViewSelectedBuilding(ui);
+    if (b && b->generation == ui->selectedGeneration)
+    {
+        const BuildingDef *d = &BUILDINGS[b->type];
+        DiamondLine(b->x, b->y, d->w, d->h, INK, 7 * pixel);
+        DiamondLine(b->x, b->y, d->w, d->h, PAPER, 4 * pixel);
+        DiamondLine(b->x, b->y, d->w, d->h, ACCENT, 2 * pixel);
+    }
+    for (int i = 0; i < ui->selectionCount; i++)
+    {
+        EntityRef ref = ui->selection[i];
+        if (!GameCitizenValid(ui->g, ref))
+            continue;
+        Citizen *c = &ui->g->citizens[ref.slot];
+        Vector2 foot = ViewIso(c->x / 256.f + .5f, c->y / 256.f + .5f);
+        foot.y += 5;
+        float rx = fmaxf(18, 11 * pixel), ry = fmaxf(8, 5 * pixel);
+        for (int pass = 0; pass < 2; pass++)
+            for (int segment = 0; segment < 32; segment++)
+            {
+                float a = segment * 2 * PI / 32, z = (segment + 1) * 2 * PI / 32;
+                DrawLineEx((Vector2){foot.x + cosf(a) * rx, foot.y + sinf(a) * ry},
+                           (Vector2){foot.x + cosf(z) * rx, foot.y + sinf(z) * ry},
+                           (pass ? 2.5f : 5.5f) * pixel, pass ? ACCENT : INK);
+            }
+        Rectangle bounds = ViewPoseBounds(ViewCitizenPose(ui, ref.slot), foot, 42.5f);
+        Vector2 tip = {foot.x, bounds.y - 5 * pixel};
+        DrawTriangle((Vector2){tip.x - 7 * pixel, tip.y - 10 * pixel}, tip,
+                     (Vector2){tip.x + 7 * pixel, tip.y - 10 * pixel}, INK);
+        DrawTriangle((Vector2){tip.x - 4 * pixel, tip.y - 8 * pixel}, (Vector2){tip.x, tip.y - 2 * pixel},
+                     (Vector2){tip.x + 4 * pixel, tip.y - 8 * pixel}, PAPER);
     }
 }
 
@@ -367,12 +439,10 @@ void ViewWorldDraw(ViewContext *ui)
         DrawItem item = items[i];
         if (item.kind == 0)
         {
-            int x = item.id % MAP_SIZE, y = item.id / MAP_SIZE;
             Tile *t = &g->tiles[item.id];
-            Vector2 foot = ViewIso(x + .5f, y + .5f);
-            foot.y += 8;
-            int sprite = t->node == NODE_TREE ? 12 : (t->node == NODE_STONE || t->node == NODE_ORE) ? 13 : 14;
-            float width = t->node == NODE_TREE ? 64 : 50;
+            int sprite;
+            float width;
+            Vector2 foot = ResourceVisual(item.id, t->node, &sprite, &width);
             Color tint = t->node == NODE_ORE    ? (Color){204, 142, 84, 255}
                          : t->node == NODE_TREE ? ViewMix(WHITE, (Color){194, 218, 207, 255}, snow * .7f)
                                                 : WHITE;
@@ -398,6 +468,18 @@ void ViewWorldDraw(ViewContext *ui)
         Vector2 p = ViewIso(sites[i][0], sites[i][1]);
         DiamondLine(sites[i][0] - 2, sites[i][1] - 2, 5, 5, ACCENT, 2);
         DrawCircleV(p, 5, ACCENT);
+    }
+    SelectionDraw(ui);
+    if (ui->orderMode == ORDER_GATHER && ViewWorldHit(ui))
+    {
+        int resource = ViewResourceAt(ui);
+        if (resource >= 0)
+        {
+            int x = resource % MAP_SIZE, y = resource / MAP_SIZE;
+            DiamondLine(x, y, 1, 1, INK, 7 / ui->camera.zoom);
+            DiamondLine(x, y, 1, 1, PAPER, 4 / ui->camera.zoom);
+            DiamondLine(x, y, 1, 1, ACCENT, 2 / ui->camera.zoom);
+        }
     }
     if (ui->areaRole >= 0 && ui->hoverTile >= 0)
     {

@@ -60,6 +60,8 @@ bool OrdersApply(GameState *g, GameCommand cmd, char *r, int n)
     if (o.type == ORDER_GATHER &&
         (c->unitType || o.targetKind != TARGET_TILE || !g->tiles[GameTile(o.x, o.y)].node))
         return Reject(r, n, "Choose a natural resource for a civilian.");
+    if (o.type == ORDER_GATHER && g->tiles[GameTile(o.x, o.y)].amount <= 0)
+        return Reject(r, n, "This resource is depleted. Choose another resource.");
     if (o.type == ORDER_GATHER && g->tiles[GameTile(o.x, o.y)].node == NODE_ORE &&
         !g->factions[c->owner].discovery[METALLURGY])
         return Reject(r, n, "Discover Metallurgy before mining ore.");
