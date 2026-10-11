@@ -20,7 +20,10 @@ FetchContent_MakeAvailable(raylib)
 target_compile_definitions(raylib PRIVATE
     SUPPORT_FILEFORMAT_JPG=1 SUPPORT_MODULE_RAUDIO=0 SUPPORT_MODULE_RMODELS=0)
 
-add_executable(greenfield src/main.c src/reference.c src/game_view.c)
+set(GREENFIELD_VIEW_SOURCES
+    src/view/actions.c src/view/assets.c src/view/hud.c src/view/input.c
+    src/view/panels.c src/view/screens.c src/view/widgets.c src/view/world.c)
+add_executable(greenfield src/main.c src/reference.c src/game_view.c ${GREENFIELD_VIEW_SOURCES})
 target_link_libraries(greenfield PRIVATE raylib greenfield_sim)
 if(NOT MSVC)
     target_compile_options(greenfield PRIVATE -Wall -Wextra -Wpedantic)
@@ -64,16 +67,48 @@ if(BUILD_TESTING)
         "${CMAKE_BINARY_DIR}/evidence")
 endif()
 
-add_library(greenfield_sim STATIC src/game.c src/save.c)
+add_library(greenfield_sim STATIC
+    src/game.c src/save.c
+    src/sim/definitions.c src/sim/validation.c src/sim/world.c
+    src/sim/citizens.c src/sim/buildings.c src/sim/economy.c src/sim/jobs.c
+    src/sim/workshop.c src/sim/farming.c src/sim/survival.c src/sim/rivals.c)
 target_include_directories(greenfield_sim PUBLIC src)
 if(NOT MSVC)
     target_compile_options(greenfield_sim PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 if(BUILD_TESTING)
-    add_executable(game_tests tests/test_game.c tests/campaign.c)
+    add_executable(game_tests tests/test_game.c tests/campaign.c tests/test_support.c
+        tests/sim/test_construction.c tests/sim/test_economy.c tests/sim/test_survival.c
+        tests/sim/test_farming.c tests/sim/test_rivals.c tests/sim/test_persistence.c
+        tests/sim/test_determinism.c tests/sim/test_validation.c tests/sim/test_sandbox.c)
+    target_include_directories(game_tests PRIVATE tests)
+    if(NOT MSVC)
+        target_compile_options(game_tests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
     target_link_libraries(game_tests PRIVATE greenfield_sim)
     add_test(NAME simulation COMMAND game_tests)
     add_test(NAME balanced_campaign COMMAND game_tests --campaign)
+    add_executable(game_baseline_tests tests/test_baseline.c tests/campaign.c)
+    target_link_libraries(game_baseline_tests PRIVATE greenfield_sim)
+    target_compile_definitions(game_baseline_tests PRIVATE
+        FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+    add_test(NAME simulation_baseline COMMAND game_baseline_tests)
+    # Exercise the same input/command adapters with controlled input, without
+    # opening a window or sending events to the player's running game.
+    add_executable(game_view_tests tests/test_view.c tests/test_support.c tests/campaign.c
+        ${GREENFIELD_VIEW_SOURCES})
+    target_link_libraries(game_view_tests PRIVATE raylib greenfield_sim)
+    target_compile_definitions(game_view_tests PRIVATE
+        IsKeyPressed=TestKeyPressed IsKeyDown=TestKeyDown
+        IsMouseButtonPressed=TestMousePressed IsMouseButtonDown=TestMouseDown
+        GetMouseWheelMove=TestMouseWheel GetMouseDelta=TestMouseDelta
+        GetScreenWidth=TestScreenWidth GetScreenHeight=TestScreenHeight
+        ToggleBorderlessWindowed=TestFullscreen)
+    if(NOT MSVC)
+        target_compile_options(game_view_tests PRIVATE -Wall -Wextra -Wpedantic)
+        target_link_libraries(game_view_tests PRIVATE m)
+    endif()
+    add_test(NAME view_input COMMAND game_view_tests)
 endif()
 
 add_custom_command(TARGET greenfield POST_BUILD

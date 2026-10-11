@@ -90,11 +90,14 @@ The preserved reference test compares every RGBA pixel to the cleaned source, re
 
 ## Ownership and assets
 
-- `src/game.c` / `game.h`: one authoritative `GameState`, validated commands, fixed 100 ms integer simulation, occupancy, breadth-first pathfinding, economy and progression. UI never awards resources directly.
+- `src/game.h`: public commands, queries and the single authoritative `GameState`.
+- `src/game.c`: initialization, command dispatch, fixed 100 ms update order and objectives. `src/sim/` owns the individual gameplay systems: world, citizens, jobs, economy, buildings, workshop, farming, survival, rivals, definitions and validation. UI never awards resources directly.
 - `src/save.c`: one canonical serializer shared by persistence and deterministic state hashes. No raw C struct dumps or pointer fields.
-- `src/game_view.c`: input, camera, depth-sorted rendering, actual citizen-state animation and UI. It issues commands to the simulation.
+- `src/game_view.c`: window/frame lifecycle and composition. `src/view/` owns assets, input, world drawing, widgets, HUD, panels, screens and save/command adapters, sharing one explicitly passed `ViewContext`.
 - `src/reference.c` / `scene.fs`: preserved illustration viewer and its original localized animation/capture verification.
 - `tests/campaign.c`: test-only player commands. It is not linked into the playable game and does not inject resources or complete objectives directly.
+
+See [Code organization](docs/architecture.md) for module ownership, extension rules and focused test commands. Simulation checks live in `tests/sim/`; `simulation_baseline` preserves pre-refactor campaign hashes and version-1 save continuations, while `view_input` checks the production input adapters with controlled input. The public simulation API and save format are unchanged.
 
 The existing C/raylib/CMake application, macOS bundle, asset-loading convention, reference camera/input and GPU verification were reused. New surfaces are the simulation, renderer, canonical local save and modular art, each needed to replace a fixed illustration with a changeable village. There is one resource ledger, command path, serializer and simulation tick; no parallel gameplay store or backend.
 
