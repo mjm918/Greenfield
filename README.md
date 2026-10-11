@@ -52,7 +52,9 @@ A temporary truce costs the displayed food payment and lasts twelve minutes. A l
 
 | Input | Action |
 | --- | --- |
-| Left click / drag | Select a citizen/building / select a group |
+| Left click | Select a citizen or building |
+| Left-drag empty ground | Grab and pan the world; selection is kept |
+| Shift-drag | Select a group / add to the current selection |
 | Shift + selection | Add or toggle selected citizens |
 | Right click | Contextual move, gather, build, repair, work, deliver or attack |
 | Shift + order | Append an order, up to sixteen |
@@ -62,6 +64,7 @@ A temporary truce costs the displayed food payment and lasts twelve minutes. A l
 | Select center, right click | Set new recruits’ rally instruction |
 | Space / F1 / F2 / F3 | Pause / 1× / 2× / 4× |
 | Middle drag / arrows / wheel | Pan / pan / zoom |
+| Minimap click / drag | Move the camera across the valley |
 | Home / M / minimap click | Founding camp / whole valley / recenter |
 | B / W / R / O | Worker construction palette / workforce / discoveries / objectives |
 | G / H / F | Grid / field guide / borderless fullscreen |
@@ -73,7 +76,7 @@ Workforce acts on the selected citizens. Counts reflect actual roles; there is n
 
 The new single slot is `~/Library/Application Support/Greenfield/country.gfv2` on macOS (`~/.greenfield/country.gfv2` elsewhere). Old `.gfv1` files remain untouched and are not migrated. Manual saves and two-minute simulation-time autosaves use the same slot. A new game does not overwrite it until saving occurs. Closing does not force a save.
 
-Version 2 explicitly serializes both factions, generation handles, orders, routes, cargo, reservations, queues, discoveries, advancement, weather, AI decisions, combat and treaties. Validation precedes save; a temporary file is flushed and synced before atomic rename. Load validates a separate candidate before replacing the current game. Invalid/interrupted saves preserve the last usable slot. Failed loading pauses autosave until deliberate saving, successful loading or a new game.
+Version 3 reads existing country version-2 saves without overwriting them on load, and adds citizen facing and wildlife positions, behavior and RNG state. It keeps the same `country.gfv2` slot; version-1 village saves remain unsupported. The codec explicitly serializes both factions, generation handles, orders, routes, cargo, reservations, queues, discoveries, advancement, weather, AI decisions, combat and treaties. Validation precedes save; a temporary file is flushed and synced before atomic rename. Load validates a separate candidate before replacing the current game. Invalid/interrupted saves preserve the last usable slot. Failed loading pauses autosave until deliberate saving, successful loading or a new game.
 
 ## Verification
 
@@ -86,7 +89,7 @@ cd build
 ./game_capacity_tests
 ```
 
-The campaign scripts use ordinary player commands, allow shortages and theft, and check timing, objectives and a mid-campaign save/load. The capacity test uses an explicitly constructed stress fixture, separate from campaign evidence. Version-2 checkpoints deliberately replace the old gameplay expectations; historical version-1 fixtures remain for provenance, not acceptance.
+The campaign scripts use ordinary player commands, allow shortages and theft, and check timing, objectives and a mid-campaign save/load. The capacity test uses an explicitly constructed stress fixture, separate from campaign evidence. Version-3 checkpoints include the animation state while retaining the country gameplay expectations; historical version-1 fixtures remain for provenance, not acceptance.
 
 ```sh
 build/bin/Greenfield.app/Contents/MacOS/Greenfield --game-capture build/evidence/winter.png
@@ -106,3 +109,17 @@ The existing C/raylib/CMake foundation, macOS bundle, reference viewer, simulati
 The new transparent `bronze-atlas.png` supplies the training ground, smelter and two civic-center stages. Its generation brief is recorded alongside the original atlas prompt files. Soldier equipment is drawn over the existing walking/working/combat animation frames. [Source Sans 3](https://github.com/adobe-fonts/source-sans) replaces the two gameplay fonts under the SIL Open Font License. The packaged license and pinned-source checksums are recorded in `assets/font-credits.md`. Historical font files remain in the repository.
 
 Runtime I/O adds one packaged PNG read and a larger payload in the existing save operations. No accounts, services, networking, telemetry, new runtime dependencies or background workers are introduced. GPU mipmaps and batches stay in memory.
+
+### Facing and wildlife
+
+Workers face the resource or building they are using, including rear-facing poses. Foraging uses hands; mining uses a pick; construction uses a hammer; farming uses a hoe. Deer roam around their hunting grounds, pause, walk and run away from nearby citizens. Their movement, facing and animation follow fixed simulation ticks and survive saving/loading. Clicking a moving deer still orders hunting at its resource site. Hunting yields and delivery rules are unchanged.
+
+The existing sprites, jobs, movement, economy and atomic save path are reused. Five matching transparent atlases were made with the built-in image tool; the brief and cell layouts are in [animation asset prompts](docs/animation-asset-prompts.md). Wildlife and pose selection have small dedicated modules, with no parallel resource ledger. Startup loads five extra PNGs; saves grow by 2,180 bytes. No new runtime dependency, network access, background task or save frequency is introduced.
+
+### Construction and idle-worker controls
+
+Select an unfinished structure and choose **Resume building** to assign its nearest idle civilian. You can also select workers and right-click the site, or use **Build / repair** and click it. Progress and reserved materials are reused. If every worker is busy, the button explains how to reassign one. If paused, press Space or Play to let construction continue.
+
+**Idle workers** and the header counter use actual availability, including builders whose previous work is finished. Workers with queued orders, cargo, ongoing work or training are excluded. Selecting idle workers centers the camera on them; if there are none, the current selection stays and a message explains why.
+
+Left-drag empty ground to pan; the custom hand closes while dragging. Shift-drag selects groups, and dragging from a citizen still selects. Middle-drag and arrow keys remain available. The minimap also follows a held drag. The cursor is drawn with the existing UI palette; no additional assets, saved fields, filesystem operations or dependencies are required.

@@ -11,10 +11,11 @@
 #define MAX_PATH 512
 #define MAX_ORDERS 16
 #define MAX_QUEUE 8
+#define MAX_WILDLIFE 32
 #define TICKS_SECOND 10
 #define DAY_TICKS 1800
 #define WINTER_END 7200
-#define SAVE_VERSION 2
+#define SAVE_VERSION 3
 
 typedef enum
 {
@@ -182,6 +183,25 @@ typedef struct
 {
     int terrain, node, amount, occupied, natural, regrowth;
 } Tile;
+typedef enum
+{
+    FACING_SE,
+    FACING_SW,
+    FACING_NE,
+    FACING_NW
+} Facing;
+typedef enum
+{
+    ANIMAL_IDLE,
+    ANIMAL_WALK,
+    ANIMAL_RUN
+} AnimalState;
+// One representative animal per hunting ground. Food remains owned by its Tile.
+typedef struct
+{
+    int home, x, y, goalX, goalY, facing, state, wait, stepX, stepY;
+    uint32_t random;
+} Wildlife;
 typedef struct
 {
     int type, unitType, progress, duration, cost[RESOURCE_COUNT];
@@ -200,6 +220,7 @@ typedef struct
         attackCooldown;
     int orderCount, training, recipe[RESOURCE_COUNT];
     UnitOrder orders[MAX_ORDERS];
+    int facing;
 } Citizen;
 typedef struct
 {
@@ -228,7 +249,11 @@ typedef struct
     int truceUntil, treaty, lastHostileTick;
     char events[8][128];
     int eventCount;
+    Wildlife wildlife[MAX_WILDLIFE];
+    int wildlifeCount;
 } GameState;
+int GameFacing(int dx, int dy, int fallback);
+const Wildlife *GameWildlifeForTile(const GameState *g, int tile);
 // The owner is explicit even for AI commands. Entity handles survive slot reuse.
 typedef struct
 {
@@ -278,6 +303,8 @@ bool GameCanAffordFor(const GameState *g, int owner, const int cost[RESOURCE_COU
 int GamePopulationFor(const GameState *g, int owner);
 int GameHousingFor(const GameState *g, int owner);
 int GameRoleCountFor(const GameState *g, int owner, int role);
+bool GameCitizenIsIdle(const GameState *g, int id);
+int GameIdleCountFor(const GameState *g, int owner);
 int GameBuildingCountFor(const GameState *g, int owner, int type, bool completeOnly);
 int GameFoodDaysTenthsFor(const GameState *g, int owner);
 int GameSiteControl(const GameState *g, int owner);

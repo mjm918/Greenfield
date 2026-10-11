@@ -49,6 +49,13 @@ static void Draw(ViewContext *ui)
     DrawTexturePro(ui->canvas.texture,
                    (Rectangle){0, 0, ui->canvas.texture.width, -ui->canvas.texture.height}, dst,
                    (Vector2){0, 0}, 0, WHITE);
+    // Draw after composition so the hand also remains visible in letterboxing.
+    if (ui->showCursor)
+    {
+        BeginMode2D((Camera2D){.offset = {dst.x, dst.y}, .zoom = scale});
+        ViewCursor(ui);
+        EndMode2D();
+    }
     EndDrawing();
 }
 
@@ -189,9 +196,16 @@ int GameViewRun(GameState *game, int argc, char **argv, bool returning)
         Vector2 raw = GetMousePosition();
         ui->mouse = (Vector2){(raw.x - (GetScreenWidth() - SCREEN_W * scale) / 2) / scale,
                               (raw.y - (GetScreenHeight() - SCREEN_H * scale) / 2) / scale};
+        ui->showCursor = !capture && IsCursorOnScreen() && IsWindowFocused();
+        if (ui->showCursor && !IsCursorHidden())
+            HideCursor();
+        else if (!ui->showCursor && IsCursorHidden())
+            ShowCursor();
         Vector2 tile = ViewTileAt(ui, ui->mouse);
         ui->hoverTile = GameTile((int)floorf(tile.x), (int)floorf(tile.y));
-        if (!capture)
+        if (!IsWindowFocused())
+            ViewCancelDrag(ui);
+        if (!capture && IsWindowFocused())
             ViewInput(ui, dt);
         else if (captureBuild >= 0)
             ui->hoverTile = GameTile(26, 27);
@@ -230,6 +244,7 @@ int GameViewRun(GameState *game, int argc, char **argv, bool returning)
     if (ui->reference)
         result = 2;
     ViewAssetsUnload(ui);
+    ShowCursor();
     CloseWindow();
     return result;
 }

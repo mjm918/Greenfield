@@ -9,8 +9,10 @@ bool ViewLoad(ViewContext *ui, const char *path);
 void ViewIssueSelected(ViewContext *ui, int command, int value, UnitOrder order, bool append);
 int ViewSelectedWorkers(const ViewContext *ui);
 void ViewSelectIdle(ViewContext *ui);
+void ViewResumeConstruction(ViewContext *ui);
 void ViewSelectBuilding(ViewContext *ui, int id);
 void ViewHoldSelected(ViewContext *ui);
 void ViewTogglePanel(ViewContext *ui, int panel);
 void ViewBuildToggle(ViewContext *ui);
+void ViewCancelDrag(ViewContext *ui);
 #endif

@@ -19,7 +19,7 @@ int main(int argc, char **argv)
              "--capture-build 0..12, --capture-building 0..12, --capture-soldiers, --benchmark-frames N "
              "(with --game-capture).\n\n"
              "Space pause, F1/F2/F3 speed, Ctrl+number save group, number recall group.\n"
-             "Drag selects, Shift queues, right-click orders, middle-drag / arrows pan.\n"
+             "Drag empty ground pans; Shift-drag selects; Shift queues right-click orders.\n"
              "A attack-move, D defend, X hold, T retreat, L plunder, S stop.\n"
              "B worker construction, W workforce, R discoveries, O objectives, H help, Esc menu.\n"
              "Wheel zoom, Home recenter, M full map, F5 save, F9 load, F fullscreen.");

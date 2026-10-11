@@ -30,8 +30,23 @@ bool GameValidate(const GameState *g, char *r, int n)
         g->buildingCount < 0 || g->buildingCount > MAX_BUILDINGS || g->eventCount < 0 || g->eventCount > 8 ||
         g->mapRevision < 0 || g->truceUntil < 0 || g->lastHostileTick < 0 ||
         g->lastHostileTick > (int)g->tick || !Flag(g->won) || !Flag(g->lost) || !Flag(g->treaty) ||
-        !Flag(g->winterSurvived))
+        !Flag(g->winterSurvived) || g->wildlifeCount < 0 || g->wildlifeCount > MAX_WILDLIFE)
         return Reject(r, n, "Invalid simulation header.");
+    for (int i = 0; i < g->wildlifeCount; i++)
+    {
+        const Wildlife *a = &g->wildlife[i];
+        if (a->home < 0 || a->home >= TILE_COUNT || a->x < 0 || a->x >= MAP_SIZE * 256 || a->y < 0 ||
+            a->y >= MAP_SIZE * 256 || a->goalX < 0 || a->goalX >= MAP_SIZE * 256 || a->goalY < 0 ||
+            a->goalY >= MAP_SIZE * 256 || a->facing < FACING_SE || a->facing > FACING_NW ||
+            a->state < ANIMAL_IDLE || a->state > ANIMAL_RUN || a->wait < 0 || a->wait > 100 ||
+            a->stepX < -18 || a->stepX > 18 || a->stepY < -18 || a->stepY > 18 || !a->random ||
+            Dist(a->x, a->y, a->home % MAP_SIZE * 256, a->home / MAP_SIZE * 256) > 512 ||
+            Dist(a->goalX, a->goalY, a->home % MAP_SIZE * 256, a->home / MAP_SIZE * 256) > 512)
+            return Reject(r, n, "Invalid wildlife.");
+        for (int j = 0; j < i; j++)
+            if (g->wildlife[j].home == a->home)
+                return Reject(r, n, "Duplicate hunting ground animal.");
+    }
     int64_t cargo[2][RESOURCE_COUNT] = {{0}}, reserved[2][RESOURCE_COUNT] = {{0}};
     int trainees[MAX_CITIZENS] = {0};
     for (int i = 0; i < 8; i++)
@@ -49,7 +64,7 @@ bool GameValidate(const GameState *g, char *r, int n)
             c->training < -1 || c->training >= g->buildingCount || c->work < 0 || c->work > 1000000 ||
             c->hunger < 0 || c->hunger > 10000000 || c->cold < 0 || c->cold > 10000000 || c->retry < 0 ||
             c->retry > 1000 || c->attackCooldown < 0 || c->attackCooldown > 100 || c->pathRevision < 0 ||
-            !Flag(c->harvestCargo))
+            !Flag(c->harvestCargo) || c->facing < FACING_SE || c->facing > FACING_NW)
             return Reject(r, n, "Invalid citizen.");
         if (c->job == JOB_BUILD || c->job == JOB_REPAIR || c->job == JOB_CRAFT || c->job == JOB_RESEARCH ||
             c->job == JOB_SMELT || c->job == JOB_PLANT || c->job == JOB_HARVEST)

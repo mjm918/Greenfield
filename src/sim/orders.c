@@ -109,15 +109,18 @@ bool OrdersChoose(GameState *g, Citizen *c)
     case ORDER_REPAIR:
     {
         Building *b = &g->buildings[o->target.slot];
+        // Repairing an unfinished structure first resumes its reserved project.
+        // Resolve this when executing, including queued orders and hut upgrades.
+        bool build = o->type == ORDER_BUILD || !b->complete;
         if ((o->type == ORDER_BUILD && b->complete &&
              !(g->factions[c->owner].advancing && g->factions[c->owner].center == o->target.slot)) ||
-            (o->type == ORDER_REPAIR && b->hp >= GameBuildingMaxHealth(g, b)))
+            (!build && b->hp >= GameBuildingMaxHealth(g, b)))
         {
             OrdersPop(g, c);
             break;
         }
         c->role = BUILDER;
-        c->job = o->type == ORDER_BUILD ? JOB_BUILD : JOB_REPAIR;
+        c->job = build ? JOB_BUILD : JOB_REPAIR;
         c->target = o->target.slot;
         break;
     }

@@ -193,6 +193,20 @@ static void CitizenWork(GameState *g, Citizen *c)
             c->role = c->unitType ? GUARD : IDLE;
         return;
     }
+    // Face the work itself, not the adjacent tile used to reach it.
+    if (c->job == JOB_GATHER)
+    {
+        const Wildlife *animal = GameWildlifeForTile(g, c->target);
+        int x = animal ? animal->x : c->target % MAP_SIZE * 256;
+        int y = animal ? animal->y : c->target / MAP_SIZE * 256;
+        c->facing = GameFacing(x - c->x, y - c->y, c->facing);
+    }
+    else if (c->target >= 0 && c->target < g->buildingCount)
+    {
+        Building *b = &g->buildings[c->target];
+        c->facing = GameFacing(b->x * 256 + (BUILDINGS[b->type].w - 1) * 128 - c->x,
+                               b->y * 256 + (BUILDINGS[b->type].h - 1) * 128 - c->y, c->facing);
+    }
     if (c->job == JOB_REPAIR)
     {
         Building *b = &g->buildings[c->target];

@@ -112,6 +112,8 @@ void CombatUpdate(GameState *g)
         int dx = Max(0, Max(x - c->x / 256, c->x / 256 - (x + w - 1))),
             dy = Max(0, Max(y - c->y / 256, c->y / 256 - (y + h - 1)));
         c->job = JOB_FIGHT;
+        c->facing = GameFacing((enemy ? enemy->x : x * 256 + (w - 1) * 128) - c->x,
+                               (enemy ? enemy->y : y * 256 + (h - 1) * 128) - c->y, c->facing);
         if (dx + dy > range)
         {
             if (!o || o->type != ORDER_HOLD)

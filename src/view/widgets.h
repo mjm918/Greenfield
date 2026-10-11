@@ -17,4 +17,5 @@ bool ViewButton(ViewContext *ui, Rectangle r, const char *text, bool selected, b
 void ViewToast(ViewContext *ui, const char *text);
 void ViewBar(float x, float y, float width, float value, Color color);
 void ViewCost(ViewContext *ui, const int *cost, float x, float y, float width);
+void ViewCursor(const ViewContext *ui);
 #endif

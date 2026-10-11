@@ -27,7 +27,7 @@ static inline Rectangle ViewSelectionRect(const ViewContext *ui)
     if (b)
     {
         int columns = b->owner              ? 0
-                      : !b->complete        ? 1
+                      : !b->complete        ? 2
                       : b->type == HEARTH   ? 4
                       : b->type == WORKSHOP ? 2
                       : b->type == SHELTER  ? 1

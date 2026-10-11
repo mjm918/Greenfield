@@ -13,6 +13,7 @@
 #include "sim/survival.h"
 #include "sim/workshop.h"
 #include "sim/world.h"
+#include "sim/wildlife.h"
 #include <string.h>
 uint32_t SimRandom(GameState *g)
 {
@@ -33,6 +34,7 @@ void GameInit(GameState *g)
     memset(g, 0, sizeof(*g));
     g->random = 0x47f1e1d;
     WorldInit(g);
+    WildlifeInit(g);
     const int supplies[RESOURCE_COUNT] = {60, 100, 40, 24, 15};
     for (int o = 0; o < 2; o++)
     {
@@ -162,6 +164,7 @@ void GameTick(GameState *g)
     CitizensResolveDeaths(g);
     RivalsUpdate(g);
     FarmingUpdate(g);
+    WildlifeUpdate(g);
     JobsUpdate(g);
     ProductionUpdate(g);
     AiUpdate(g);

@@ -123,6 +123,80 @@ static void Orders(void)
               (GameCommand){.type = CMD_ORDER, .entity = GameCitizenRef(g, id), .append = 1, .order = move}));
     free(g);
 }
+static void ResumeConstruction(void)
+{
+    // Both ordinary build and repair commands must continue paid, partially
+    // built sites for either faction, including after save/load interruption.
+    for (int owner = 0; owner < 2; owner++)
+    {
+        GameState *g = New();
+        Quiet(g);
+        int x = owner ? 77 : 18, y = owner ? 77 : 18;
+        CHECK(Do(g, (GameCommand){.owner = owner, .type = CMD_BUILD, .a = SHELTER, .b = x, .c = y}));
+        int id = g->tiles[GameTile(x, y)].occupied;
+        EntityRef worker = GameCitizenRef(g, owner ? 8 : 0);
+        UnitOrder order = {.type = ORDER_BUILD,
+                           .targetKind = TARGET_BUILDING,
+                           .target = GameBuildingRef(g, id),
+                           .x = x,
+                           .y = y};
+        CHECK(Do(g, (GameCommand){.owner = owner, .type = CMD_ORDER, .entity = worker, .order = order}));
+        for (int i = 0; i < 1500 && g->buildings[id].progress < 25; i++)
+            JobsUpdate(g);
+        CHECK(g->buildings[id].started && g->buildings[id].progress >= 25 && !g->buildings[id].complete);
+        CHECK(Do(g, (GameCommand){.owner = owner, .type = CMD_STOP, .entity = worker}));
+        int progress = g->buildings[id].progress;
+        for (int i = 0; i < 40; i++)
+            JobsUpdate(g);
+        CHECK(g->buildings[id].progress == progress && GameCitizenIsIdle(g, worker.slot));
+        char why[256];
+        CHECK(GameSave(g, "resume-construction.save", why, sizeof(why)));
+        CHECK(GameLoad(g, "resume-construction.save", why, sizeof(why)));
+        int stock[RESOURCE_COUNT], reserved[RESOURCE_COUNT];
+        memcpy(stock, g->factions[owner].stock, sizeof(stock));
+        memcpy(reserved, g->factions[owner].reserved, sizeof(reserved));
+        order.type = owner ? ORDER_REPAIR : ORDER_BUILD;
+        CHECK(Do(g, (GameCommand){.owner = owner, .type = CMD_ORDER, .entity = worker, .order = order}));
+        CHECK(!GameCitizenIsIdle(g, worker.slot));
+        CHECK(!memcmp(stock, g->factions[owner].stock, sizeof(stock)));
+        CHECK(!memcmp(reserved, g->factions[owner].reserved, sizeof(reserved)));
+        for (int i = 0; i < 1500 && !g->buildings[id].complete; i++)
+            JobsUpdate(g);
+        CHECK(g->buildings[id].complete && g->buildings[id].progress == BUILDINGS[SHELTER].labor);
+        CHECK(g->factions[owner].reserved[WOOD] == 0);
+        for (int i = 0; i < 100; i++)
+            JobsUpdate(g);
+        CHECK(g->citizens[worker.slot].role == BUILDER && GameCitizenIsIdle(g, worker.slot));
+        Valid(g);
+        remove("resume-construction.save");
+        free(g);
+    }
+}
+static void IdleWorkers(void)
+{
+    GameState *g = New();
+    Quiet(g);
+    CHECK(GameIdleCountFor(g, 0) == 8 && GameIdleCountFor(g, 1) == 8);
+    Citizen *c = &g->citizens[0];
+    c->role = BUILDER;
+    CHECK(GameCitizenIsIdle(g, 0));
+    c->job = JOB_BUILD;
+    CHECK(!GameCitizenIsIdle(g, 0));
+    JobsReset(c);
+    c->carry[FOOD] = 1;
+    CHECK(!GameCitizenIsIdle(g, 0));
+    c->carry[FOOD] = 0;
+    c->training = 0;
+    CHECK(!GameCitizenIsIdle(g, 0));
+    c->training = -1;
+    c->unitType = SPEARMAN;
+    CHECK(!GameCitizenIsIdle(g, 0));
+    c->unitType = CIVILIAN;
+    c->alive = 0;
+    CHECK(!GameCitizenIsIdle(g, 0));
+    CHECK(GameIdleCountFor(g, 0) == 7 && !GameCitizenIsIdle(g, -1));
+    free(g);
+}
 static void Queues(void)
 {
     GameState *g = New();
@@ -593,6 +667,8 @@ int main(void)
 {
     Foundation();
     Orders();
+    ResumeConstruction();
+    IdleWorkers();
     Queues();
     Boundaries();
     MetalsAndProjects();

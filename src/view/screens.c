@@ -26,7 +26,7 @@ void ViewMenu(ViewContext *ui)
             GameInit(ui->g);
             ui->selectionCount = 0;
             ui->orderMode = 0;
-            ui->dragging = false;
+            ViewCancelDrag(ui);
             for (int i = 0; i < 10; i++)
                 ui->groupCount[i] = 0;
             ui->menu = false;
@@ -96,7 +96,8 @@ void ViewGuide(ViewContext *ui)
         "Select workers and press B to build shelters. Keep the hearth supplied. Everyone needs food and a "
         "bed, including soldiers. The "
         "opening winter lasts twelve minutes. Shortages warn before harm; restored supplies allow recovery.",
-        "Drag to select citizens. Right-click resources or buildings to work, build, repair or deliver. "
+        "Shift-drag to select citizens. Right-click resources or buildings to work, build, repair or "
+        "deliver. "
         "Shift queues orders. Ctrl+number creates groups. Recruit adults at the center; build housing before "
         "the queue fills.",
         "Upgrade the communal center after winter. Staff a workshop to discover cultivation and storage, "
@@ -113,8 +114,8 @@ void ViewGuide(ViewContext *ui)
     }
     ViewText(ui, "Space pause   F1/F2/F3 speed   B construction   W workers   R discoveries   O objectives",
              290, 693, 16, MUTED);
-    ViewText(ui, "Wheel zoom   Middle drag / arrows pan   Home recenter   M whole valley   G grid", 290, 720,
-             16, MUTED);
+    ViewText(ui, "Drag empty ground / middle drag / arrows pan   Wheel zoom   Home recenter   M whole valley",
+             290, 720, 16, MUTED);
     ViewText(ui, "F5 save   F9 load   Esc menu or cancel   F fullscreen", 290, 747, 16, MUTED);
     if (ViewButton(ui, (Rectangle){974, 740, 173, 41}, "Back to the valley", true, true))
         ui->help = false;
@@ -149,7 +150,7 @@ void ViewEnding(ViewContext *ui)
             GameInit(g);
             ui->selectionCount = 0;
             ui->orderMode = 0;
-            ui->dragging = false;
+            ViewCancelDrag(ui);
             for (int i = 0; i < 10; i++)
                 ui->groupCount[i] = 0;
             ui->speed = 1;

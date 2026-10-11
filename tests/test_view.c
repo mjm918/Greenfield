@@ -1,5 +1,8 @@
 #include "game.h"
+#include "sim/jobs.h"
+#include "sim/wildlife.h"
 #include "view/actions.h"
+#include "view/animation.h"
 #include "view/assets.h"
 #include "view/context.h"
 #include "view/hud.h"
@@ -7,6 +10,7 @@
 #include "view/layout.h"
 #include "view/panels.h"
 #include "view/selection.h"
+#include "view/widgets.h"
 #include "view/world.h"
 #include <math.h>
 #include <stdio.h>
@@ -98,6 +102,235 @@ static void HudRectClick(ViewContext *u, Rectangle r)
 {
     HudClick(u, r.x + r.width / 2, r.y + r.height / 2);
 }
+static void AnimationChecks(ViewContext *u)
+{
+    GameState *g = u->g;
+    GameInit(g);
+    Citizen *c = &g->citizens[1];
+    int tile = GameTile(25, 30);
+    JobsReset(c);
+    c->job = JOB_GATHER;
+    c->target = tile;
+    c->work = 1;
+    for (int facing = FACING_SE; facing <= FACING_NW; facing++)
+    {
+        c->facing = facing;
+        SpritePose p = ViewCitizenPose(u, 1);
+        CHECK(p.atlas == &u->peopleJobs && p.flip == ((facing & 1) != 0));
+        CHECK(p.frame / 2 == (facing >= FACING_NE));
+    }
+    const int nodes[] = {NODE_BERRIES, NODE_STONE, NODE_ORE, NODE_TREE, NODE_GAME};
+    const int rows[] = {0, 1, 1, 1, 3};
+    for (int i = 0; i < 5; i++)
+    {
+        g->tiles[tile].node = nodes[i];
+        SpritePose p = ViewCitizenPose(u, 1);
+        CHECK(p.frame / 4 == rows[i]);
+        CHECK(p.atlas == (i < 3 ? &u->peopleJobs : &u->peopleNorth));
+    }
+    c->job = JOB_REPAIR;
+    c->work = 0;
+    CHECK(ViewCitizenPose(u, 1).frame / 4 == 2);
+    c->job = JOB_PLANT;
+    c->work = 1;
+    CHECK(ViewCitizenPose(u, 1).frame / 4 == 3);
+    JobsReset(c);
+    CHECK(ViewCitizenPose(u, 1).atlas == &u->peopleNorth && ViewCitizenPose(u, 1).flip);
+    c->job = JOB_DELIVER;
+    CHECK(ViewCitizenPose(u, 1).frame / 4 == 2);
+    c->pathLength = 2;
+    g->tick = 3;
+    int frame = ViewCitizenPose(u, 1).frame;
+    g->tick += 3;
+    CHECK(ViewCitizenPose(u, 1).frame != frame);
+    Wildlife *a = &g->wildlife[2];
+    a->state = ANIMAL_WALK;
+    a->facing = FACING_NE;
+    CHECK(ViewAnimalPose(u, 2).frame / 4 == 2);
+    frame = ViewAnimalPose(u, 2).frame;
+    g->tick += 5;
+    CHECK(ViewAnimalPose(u, 2).frame != frame);
+    a->state = ANIMAL_RUN;
+    a->facing = FACING_SW;
+    CHECK(ViewAnimalPose(u, 2).frame / 4 == 1 && ViewAnimalPose(u, 2).flip);
+    a->stepX = 18;
+    u->menu = u->help = false;
+    u->speed = 1;
+    u->accumulator = 0;
+    Vector2 before = ViewAnimalPosition(u, 2);
+    u->accumulator = .05;
+    CHECK(ViewAnimalPosition(u, 2).x > before.x);
+    u->speed = 0;
+    CHECK(ViewAnimalPosition(u, 2).x == a->x / 256.f + .5f);
+    GameInit(g);
+    u->speed = 1;
+    u->accumulator = 0;
+}
+static void CaptureWorld(ViewContext *u, const char *path)
+{
+    BeginTextureMode(u->canvas);
+    ClearBackground(BLACK);
+    ViewWorldDraw(u);
+    EndTextureMode();
+    Image image = LoadImageFromTexture(u->canvas.texture);
+    ImageFlipVertical(&image);
+    CHECK(ExportImage(image, path));
+    UnloadImage(image);
+}
+static void RenderAnimationChecks(ViewContext *u)
+{
+    // Explicit visual fixture, not a campaign: put four workers around one
+    // existing bush, then use the actual job owner to turn them toward it.
+    GameState *g = u->g;
+    GameInit(g);
+    u->panel = u->build = u->selected = u->hoverTile = -1;
+    u->menu = u->help = u->buildMenu = false;
+    u->selectionCount = u->orderMode = u->commandPage = 0;
+    u->speed = 0;
+    u->camera =
+        (Camera2D){.offset = {SCREEN_W / 2.f, SCREEN_H / 2.f}, .target = ViewIso(25.5f, 30.5f), .zoom = 3};
+    const int dx[] = {-1, 1, 0, 0}, dy[] = {0, 0, -1, 1};
+    for (int i = 0; i < g->citizenCount; i++)
+    {
+        Citizen *c = &g->citizens[i];
+        JobsReset(c);
+        c->role = IDLE;
+        if (i < 4)
+        {
+            c->x = (25 + dx[i]) * 256;
+            c->y = (30 + dy[i]) * 256;
+            c->role = FORAGER;
+            c->job = JOB_GATHER;
+            c->target = GameTile(25, 30);
+        }
+    }
+    JobsUpdate(g);
+    CaptureWorld(u, "evidence/work-facing.png");
+    // Picking follows a roaming animal's rendered position, while the order
+    // still addresses its hunting ground's authoritative resource inventory.
+    Wildlife *a = &g->wildlife[2];
+    a->x += 256;
+    a->goalX = a->x;
+    Vector2 p = ViewAnimalPosition(u, 2), foot = ViewIso(p.x, p.y);
+    u->camera.target = foot;
+    foot.y += 5;
+    Rectangle bounds = ViewPoseBounds(ViewAnimalPose(u, 2), foot, 52);
+    u->mouse =
+        GetWorldToScreen2D((Vector2){bounds.x + bounds.width / 2, bounds.y + bounds.height / 2}, u->camera);
+    u->hoverTile = GameTile(a->x / 256, a->y / 256);
+    CHECK(ViewAnimalAt(u) == a->home && u->hoverTile != a->home);
+    u->selection[0] = GameCitizenRef(g, 0);
+    u->selectionCount = 1;
+    pressedMouse = MOUSE_BUTTON_RIGHT;
+    ViewInput(u, .016f);
+    pressedMouse = -1;
+    CHECK(g->citizens[0].orders[0].type == ORDER_GATHER);
+    CHECK(GameTile(g->citizens[0].orders[0].x, g->citizens[0].orders[0].y) == a->home);
+    a->wait = 0;
+    WildlifeUpdate(g);
+    CHECK(a->state == ANIMAL_WALK);
+    CaptureWorld(u, "evidence/animal-walking.png");
+    g->citizens[0].x = a->x - 256;
+    g->citizens[0].y = a->y;
+    for (int i = 0; i < 8; i++)
+    {
+        g->tick++;
+        WildlifeUpdate(g);
+    }
+    CHECK(a->state == ANIMAL_RUN && (a->stepX || a->stepY));
+    CaptureWorld(u, "evidence/animal-running.png");
+}
+static void CaptureControls(ViewContext *u, const char *path)
+{
+    BeginTextureMode(u->canvas);
+    ClearBackground(BLACK);
+    ViewWorldDraw(u);
+    BeginMode2D((Camera2D){.zoom = RENDER_SCALE});
+    u->allowInput = false;
+    ViewHeader(u);
+    ViewSelectionDraw(u);
+    ViewWorldHUD(u);
+    ViewCursor(u);
+    EndMode2D();
+    EndTextureMode();
+    Image image = LoadImageFromTexture(u->canvas.texture);
+    ImageFlipVertical(&image);
+    CHECK(ExportImage(image, path));
+    UnloadImage(image);
+}
+static void RenderControlChecks(ViewContext *u)
+{
+    GameState *g = u->g;
+    GameInit(g);
+    ViewCancelDrag(u);
+    u->menu = u->help = u->buildMenu = false;
+    u->panel = u->selected = u->build = -1;
+    u->selectionCount = u->orderMode = 0;
+    u->speed = 1;
+    for (int i = 0; i < 50; i++)
+        JobsUpdate(g);
+    CHECK(GameIdleCountFor(g, 0) == 1);
+    HudRectClick(u, ViewCommandRect(u, 1));
+    CHECK(u->selectionCount == 1 && u->selection[0].slot == 0);
+    CHECK(g->citizens[0].role == BUILDER);
+    ViewSelectBuilding(u, -1);
+    HudClick(u, 740, 24);
+    CHECK(u->selectionCount == 1 && u->selectedCitizen == 0);
+    CHECK(GameCommandApply(g, (GameCommand){.type = CMD_BUILD, .a = SHELTER, .b = 18, .c = 18}, NULL, 0));
+    int site = g->tiles[GameTile(18, 18)].occupied;
+    ViewSelectBuilding(u, site);
+    int wood = g->factions[0].stock[WOOD], reserved = g->factions[0].reserved[WOOD];
+    CHECK(ViewSelectionRect(u).width >= ViewCommandRect(u, 1).x + ViewCommandRect(u, 1).width - 16);
+    HudRectClick(u, ViewCommandRect(u, 0));
+    CHECK(g->citizens[0].orders[0].type == ORDER_BUILD && g->citizens[0].orders[0].target.slot == site);
+    CHECK(g->factions[0].stock[WOOD] == wood && g->factions[0].reserved[WOOD] == reserved);
+    for (int i = 0; i < 1500 && g->buildings[site].progress < 60; i++)
+        JobsUpdate(g);
+    CHECK(g->buildings[site].progress >= 60 && !g->buildings[site].complete);
+    u->camera.target = ViewIso(20, 21);
+    u->camera.zoom = 1.4f;
+    u->mouse = (Vector2){350, 818};
+    CaptureControls(u, "evidence/controls-resume.png");
+    CHECK(GameCommandApply(g, (GameCommand){.type = CMD_STOP, .entity = GameCitizenRef(g, 0)}, NULL, 0));
+    u->selected = -1;
+    u->selectionCount = 1;
+    u->selection[0] = GameCitizenRef(g, 0);
+    HudRectClick(u, ViewCommandRect(u, 2));
+    CHECK(u->orderMode == ORDER_REPAIR);
+    Point(u, 18.5f, 18.5f);
+    pressedMouse = MOUSE_BUTTON_LEFT;
+    ViewInput(u, .016f);
+    pressedMouse = -1;
+    CHECK(g->citizens[0].orders[0].type == ORDER_REPAIR);
+    int progress = g->buildings[site].progress;
+    for (int i = 0; i < 100; i++)
+        JobsUpdate(g);
+    CHECK(g->buildings[site].progress > progress);
+    // The minimap owns a held drag; subsequent points need no second click.
+    heldMouse = MOUSE_BUTTON_LEFT;
+    HudRectClick(u, ViewMapRect());
+    CHECK(u->mapDragging && !u->dragging);
+    Vector2 before = u->camera.target;
+    u->mouse.x += 25;
+    BeginTextureMode(u->canvas);
+    BeginMode2D((Camera2D){.zoom = RENDER_SCALE});
+    u->allowInput = true;
+    u->clickConsumed = false;
+    ViewWorldHUD(u);
+    EndMode2D();
+    EndTextureMode();
+    CHECK(u->mapDragging && u->camera.target.x != before.x);
+    heldMouse = -1;
+    ViewCancelDrag(u);
+    u->camera.target = ViewIso(20, 21);
+    u->mouse = (Vector2){750, 470};
+    u->panning = true;
+    CaptureControls(u, "evidence/controls-hand-grab.png");
+    ViewCancelDrag(u);
+    for (int i = 0; i < 1000 && !g->buildings[site].complete; i++)
+        JobsUpdate(g);
+    CHECK(g->buildings[site].complete && g->factions[0].reserved[WOOD] == 0);
+}
 static void RenderChecks(ViewContext *u)
 {
     GameState *g = u->g;
@@ -186,6 +419,8 @@ static void RenderChecks(ViewContext *u)
     // Measure the longest fixed header labels using the actual packaged font.
     for (int i = 0; i < AGE_COUNT; i++)
         CHECK(MeasureTextEx(u->font, AGES[i].name, 16, .5f).x <= 124);
+    RenderAnimationChecks(u);
+    RenderControlChecks(u);
     ViewAssetsUnload(u);
     CloseWindow();
 }
@@ -210,12 +445,14 @@ static void CompactSelectionChecks(ViewContext *u)
     CHECK(!ViewWorldPointHit(u, GetWorldToScreen2D(ViewIso(23.5f, 30.5f), u->camera)));
     u->mouse = (Vector2){800, 770};
     u->hoverTile = GameTile(28, 28);
+    heldKey = KEY_LEFT_SHIFT;
     heldMouse = pressedMouse = MOUSE_BUTTON_LEFT;
     ViewInput(u, .016f);
     u->mouse = (Vector2){1100, 880};
     heldMouse = pressedMouse = -1;
     ViewInput(u, .016f);
-    CHECK(u->selectionCount == 1 && u->selection[0].slot == 0);
+    heldKey = 0;
+    CHECK(u->selectionCount == 2 && u->selection[0].slot == 2 && u->selection[1].slot == 0);
     u->selectionCount = 0;
     u->mouse = (Vector2){50, 815};
     CHECK(ViewWorldHit(u));
@@ -230,6 +467,85 @@ static void CompactSelectionChecks(ViewContext *u)
         }
     u->mouse = (Vector2){700, 850};
     CHECK(ViewWorldHit(u));
+}
+static void ControlChecks(ViewContext *u)
+{
+    GameState *g = u->g;
+    GameInit(g);
+    ViewCancelDrag(u);
+    u->menu = u->help = u->buildMenu = false;
+    u->panel = u->selected = u->build = -1;
+    u->orderMode = 0;
+    u->camera.target = ViewIso(35, 35);
+    u->camera.zoom = .8f;
+    u->selectionCount = 1;
+    u->selection[0] = GameCitizenRef(g, 0);
+    Point(u, 35, 35);
+    Vector2 start = u->mouse, camera = u->camera.target;
+    int orders = g->citizens[0].orderCount;
+    heldMouse = pressedMouse = MOUSE_BUTTON_LEFT;
+    ViewInput(u, .016f);
+    CHECK(u->panCandidate && !u->panning);
+    pressedMouse = -1;
+    u->mouse.x += 80;
+    u->mouse.y += 40;
+    ViewInput(u, .016f);
+    CHECK(u->panning && fabsf(u->camera.target.x - (camera.x - 100)) < .01f);
+    CHECK(fabsf(u->camera.target.y - (camera.y - 50)) < .01f);
+    CHECK(u->selectionCount == 1 && g->citizens[0].orderCount == orders);
+    // Moving back inside the click threshold does not turn a completed pan into a click.
+    u->mouse = start;
+    heldMouse = -1;
+    ViewInput(u, .016f);
+    CHECK(!u->panning && !u->dragging && u->selectionCount == 1);
+    // Pan continues across the HUD; releasing there cannot issue an order.
+    heldMouse = pressedMouse = MOUSE_BUTTON_LEFT;
+    ViewInput(u, .016f);
+    pressedMouse = -1;
+    u->mouse = (Vector2){600, 850};
+    ViewInput(u, .016f);
+    CHECK(u->panning && !ViewWorldHit(u));
+    heldMouse = -1;
+    ViewInput(u, .016f);
+    CHECK(!u->dragging && u->selectionCount == 1 && g->citizens[0].orderCount == orders);
+    // A gesture beginning on the HUD never pans, even after entering the world.
+    camera = u->camera.target;
+    heldMouse = pressedMouse = MOUSE_BUTTON_MIDDLE;
+    ViewInput(u, .016f);
+    pressedMouse = -1;
+    u->mouse = (Vector2){700, 400};
+    ViewInput(u, .016f);
+    CHECK(!u->panning && u->camera.target.x == camera.x && u->camera.target.y == camera.y);
+    heldMouse = -1;
+    // Opening an overlay cancels any captured drag.
+    Point(u, 35, 35);
+    heldMouse = pressedMouse = MOUSE_BUTTON_LEFT;
+    ViewInput(u, .016f);
+    pressedMouse = -1;
+    u->mouse.x += 30;
+    ViewInput(u, .016f);
+    ViewTogglePanel(u, 0);
+    CHECK(!u->dragging && !u->panning && !u->panCandidate);
+    heldMouse = -1;
+    u->panel = -1;
+    // Idle means available now, not the remembered role or a queued order.
+    GameInit(g);
+    for (int i = 0; i < g->citizenCount; i++)
+        g->citizens[i].job = JOB_GATHER;
+    JobsReset(&g->citizens[0]);
+    g->citizens[0].role = BUILDER;
+    JobsReset(&g->citizens[8]);
+    JobsReset(&g->citizens[1]);
+    g->citizens[1].orders[0] = (UnitOrder){.type = ORDER_MOVE, .x = 30, .y = 30};
+    g->citizens[1].orderCount = 1;
+    ViewSelectIdle(u);
+    CHECK(u->selectionCount == 1 && u->selectedCitizen == 0 && u->selection[0].slot == 0);
+    CHECK(GameIdleCountFor(g, 0) == 1 && strstr(u->toast, "1 idle worker"));
+    CHECK(u->camera.target.x == ViewIso(g->citizens[0].x / 256.f + .5f, g->citizens[0].y / 256.f + .5f).x);
+    g->citizens[0].job = JOB_BUILD;
+    ViewSelectIdle(u);
+    CHECK(u->selectionCount == 1 && strstr(u->toast, "No idle workers"));
+    GameInit(g);
 }
 int main(int argc, char **argv)
 {
@@ -298,11 +614,14 @@ int main(int argc, char **argv)
     CHECK(g->factions[0].reserved[WOOD] == 18);
     CHECK(g->citizens[0].orders[0].type == ORDER_BUILD);
     Vector2 before = u->camera.target;
-    heldMouse = MOUSE_BUTTON_MIDDLE;
-    delta = (Vector2){20, 10};
+    heldMouse = pressedMouse = MOUSE_BUTTON_MIDDLE;
+    ViewInput(u, .016f);
+    pressedMouse = -1;
+    u->mouse.x += 20;
+    u->mouse.y += 10;
     ViewInput(u, .016f);
     heldMouse = -1;
-    delta = (Vector2){0};
+    ViewInput(u, .016f);
     CHECK(u->camera.target.x != before.x);
     Key(u, KEY_M);
     CHECK(u->camera.zoom == .16f);
@@ -319,7 +638,7 @@ int main(int argc, char **argv)
     CHECK(u->panel == 0);
     Key(u, KEY_ESCAPE);
     CHECK(u->panel == -1 && !u->menu);
-    // Drag selects living friendly citizens; Shift adds without replacing.
+    // Shift-drag selects living friendly citizens without moving the camera.
     g->citizens[0].x = 24 * 256;
     g->citizens[0].y = 27 * 256;
     g->citizens[1].x = 25 * 256;
@@ -332,11 +651,13 @@ int main(int argc, char **argv)
     Vector2 b = GetWorldToScreen2D(ViewIso(25.5f, 27.5f), u->camera);
     u->mouse = (Vector2){fminf(a.x, b.x) - 20, fminf(a.y, b.y) - 20};
     u->hoverTile = GameTile(24, 27);
+    heldKey = KEY_LEFT_SHIFT;
     heldMouse = pressedMouse = MOUSE_BUTTON_LEFT;
     ViewInput(u, .016f);
     u->mouse = (Vector2){fmaxf(a.x, b.x) + 20, fmaxf(a.y, b.y) + 20};
     heldMouse = pressedMouse = -1;
     ViewInput(u, .016f);
+    heldKey = 0;
     CHECK(u->selectionCount >= 2);
     CHECK(u->panel == -1);
     int orders = g->citizens[0].orderCount;
@@ -446,6 +767,8 @@ int main(int argc, char **argv)
     CHECK(!u->autosaveBlocked);
     remove(u->savePath);
     CompactSelectionChecks(u);
+    ControlChecks(u);
+    AnimationChecks(u);
     if (argc > 1 && !strcmp(argv[1], "--render"))
         RenderChecks(u);
     printf("%d view checks, %d failures\n", checks, failures);

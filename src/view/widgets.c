@@ -40,11 +40,45 @@ bool ViewHit(ViewContext *ui, Rectangle r)
 
 bool ViewClick(ViewContext *ui, Rectangle r)
 {
-    if (!ui->allowInput || ui->clickConsumed || !ViewHit(ui, r) || !IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+    if (!ui->allowInput || ui->clickConsumed || ui->panning || !ViewHit(ui, r) ||
+        !IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
         return false;
     // A submenu may be drawn immediately after opening. One click activates one control.
     ui->clickConsumed = true;
     return true;
+}
+
+void ViewCursor(const ViewContext *ui)
+{
+    // Small code-drawn hand: no texture loading, cursor-file dependency or
+    // platform scaling differences. The fingertip is the pointing hotspot.
+    static const char *open[] = {"        oo          ", "       o..o         ", "       o..o oo      ",
+                                 "    oo o..oo..o     ", "   o..oo..oo..o oo  ", "   o..oo..oo..oo..o ",
+                                 "   o..oo..oo..oo..o ", "   o..oo..oo..oo..o ", "   o..o........o..o ",
+                                 "   o..............o",  "oo o..............o",  "o.oo..............o",
+                                 "o..o..............o",  " o................o",  "  o..............o ",
+                                 "   o.............o ",  "    o...........o  ",  "     o.........o   ",
+                                 "     o+++++++++o   ",  "     o+++++++++o   ",  "      ooooooooo    "};
+    static const char *closed[] = {"                   ", "                   ", "                   ",
+                                   "                   ", "       ooooooo     ", "    ooo..o..o.oo   ",
+                                   "   o..o..o..o..o   ", "   o..o..o..o..o   ", "   o..o..o..o..o   ",
+                                   "   o...........o   ", "  oo...........o   ", " o....oooo.....o   ",
+                                   " o........o....o   ", "  o.......o....o   ", "   o..........o    ",
+                                   "    o.........o    ", "     o.......o     ", "     o.......o     ",
+                                   "     o+++++++o     ", "     o+++++++o     ", "      ooooooo      "};
+    const char **rows = ui->panning || ui->mapDragging ? closed : open;
+    const float pixel = 1.25f;
+    float x = roundf(ui->mouse.x - 8 * pixel), y = roundf(ui->mouse.y);
+    for (int row = 0; row < 21; row++)
+        for (int col = 0; rows[row][col]; col++)
+        {
+            char p = rows[row][col];
+            if (p != ' ')
+                DrawRectangleRec((Rectangle){x + col * pixel, y + row * pixel, pixel, pixel}, p == 'o' ? INK
+                                                                                              : p == '+'
+                                                                                                  ? ACCENT
+                                                                                                  : PAPER);
+        }
 }
 
 void ViewRounded(Rectangle r, Color color)

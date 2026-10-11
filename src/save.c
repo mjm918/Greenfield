@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "game.h"
+#include "sim/wildlife.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -204,7 +205,7 @@ static void WireFaction(Wire *w, Faction *p)
         Int(w, &p->discovery[i]);
     WireUnitOrder(w, &p->rallyOrder);
 }
-static void State(Wire *w, GameState *g)
+static void State(Wire *w, GameState *g, uint32_t version)
 {
     U64(w, &g->tick);
     U32(w, &g->random);
@@ -227,6 +228,28 @@ static void State(Wire *w, GameState *g)
     Int(w, &g->lastHostileTick);
     Int(w, &g->eventCount);
     Bytes(w, g->events, sizeof(g->events));
+    // Append-only v3 extension preserves the exact v2 prefix for safe loading.
+    if (version >= 3)
+    {
+        for (int i = 0; i < MAX_CITIZENS; i++)
+            Int(w, &g->citizens[i].facing);
+        Int(w, &g->wildlifeCount);
+        for (int i = 0; i < MAX_WILDLIFE; i++)
+        {
+            Wildlife *a = &g->wildlife[i];
+            Int(w, &a->home);
+            Int(w, &a->x);
+            Int(w, &a->y);
+            Int(w, &a->goalX);
+            Int(w, &a->goalY);
+            Int(w, &a->facing);
+            Int(w, &a->state);
+            Int(w, &a->wait);
+            Int(w, &a->stepX);
+            Int(w, &a->stepY);
+            U32(w, &a->random);
+        }
+    }
 }
 static uint64_t Digest(const unsigned char *p, size_t n)
 {
@@ -250,7 +273,7 @@ uint64_t GameHash(const GameState *g)
     if (!data)
         return 0;
     Wire w = {data, 0, WIRE_CAPACITY, 0, 1};
-    State(&w, (GameState *)g);
+    State(&w, (GameState *)g, SAVE_VERSION);
     uint64_t h = w.ok ? Digest(data, w.at) : 0;
     free(data);
     return h;
@@ -263,7 +286,7 @@ bool GameSave(const GameState *g, const char *path, char *reason, int size)
     if (!data)
         return Fail(reason, size, "Not enough memory to save.");
     Wire w = {data, 24, WIRE_CAPACITY, 0, 1};
-    State(&w, (GameState *)g);
+    State(&w, (GameState *)g, SAVE_VERSION);
     if (!w.ok)
     {
         free(data);
@@ -342,15 +365,17 @@ bool GameLoad(GameState *g, const char *path, char *reason, int size)
     U32(&w, &version);
     U32(&w, &length);
     U64(&w, &hash);
-    bool ok = memcmp(magic, "GFTRIBE", 8) == 0 && version == SAVE_VERSION && length == n - 24 &&
-              hash == Digest(data + 24, n - 24);
+    bool ok = memcmp(magic, "GFTRIBE", 8) == 0 && (version == 2 || version == SAVE_VERSION) &&
+              length == n - 24 && hash == Digest(data + 24, n - 24);
     if (ok)
     {
-        State(&w, candidate);
+        State(&w, candidate, version);
         ok = w.ok && w.at == n;
     }
     if (ok)
         ok = GameValidate(candidate, reason, size);
+    if (ok && version == 2)
+        WildlifeInit(candidate);
     if (ok)
     {
         for (int i = 0; i < 8; i++)

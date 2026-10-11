@@ -1,11 +1,18 @@
 #include "actions.h"
 #include "context.h"
 #include "widgets.h"
+#include "world.h"
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+
+void ViewCancelDrag(ViewContext *ui)
+{
+    ui->dragging = ui->panCandidate = ui->panning = ui->mapDragging = false;
+}
 
 bool ViewCommand(ViewContext *ui, int type, int a, int b, int c)
 {
@@ -56,6 +63,7 @@ bool ViewSave(ViewContext *ui)
 
 bool ViewLoad(ViewContext *ui, const char *path)
 {
+    ViewCancelDrag(ui);
     char why[256];
     bool ok = GameLoad(ui->g, path, why, sizeof(why));
     ViewToast(ui, why);
@@ -63,7 +71,6 @@ bool ViewLoad(ViewContext *ui, const char *path)
     {
         ui->selectionCount = 0;
         ui->orderMode = 0;
-        ui->dragging = false;
         ui->buildMenu = false;
         ui->commandPage = 0;
         ui->panel = -1;
@@ -102,11 +109,16 @@ int ViewSelectedWorkers(const ViewContext *ui)
 
 void ViewSelectIdle(ViewContext *ui)
 {
+    if (!GameIdleCountFor(ui->g, 0))
+    {
+        ViewToast(ui, "No idle workers right now.");
+        return;
+    }
     ui->selectionCount = 0;
     for (int i = 0; i < ui->g->citizenCount; i++)
     {
         Citizen *c = &ui->g->citizens[i];
-        if (c->alive && !c->owner && c->unitType == CIVILIAN && c->role == IDLE && c->training < 0)
+        if (!c->owner && GameCitizenIsIdle(ui->g, i))
             ui->selection[ui->selectionCount++] = GameCitizenRef(ui->g, i);
     }
     ui->selected = -1;
@@ -114,6 +126,56 @@ void ViewSelectIdle(ViewContext *ui)
     ui->buildMenu = false;
     ui->build = -1;
     ui->commandPage = ui->orderMode = 0;
+    ViewCancelDrag(ui);
+    ui->selectedCitizen = ui->selection[0].slot;
+    const Citizen *first = &ui->g->citizens[ui->selectedCitizen];
+    ui->camera.target = ViewIso(first->x / 256.f + .5f, first->y / 256.f + .5f);
+    char message[96];
+    snprintf(message, sizeof(message), "%d idle worker%s selected. Right-click to assign work.",
+             ui->selectionCount, ui->selectionCount == 1 ? "" : "s");
+    ViewToast(ui, message);
+}
+
+void ViewResumeConstruction(ViewContext *ui)
+{
+    GameState *g = ui->g;
+    EntityRef target = {ui->selected, ui->selectedGeneration};
+    if (!GameBuildingValid(g, target) || g->buildings[target.slot].owner ||
+        g->buildings[target.slot].complete)
+    {
+        ViewToast(ui, "Select an unfinished building in your settlement.");
+        return;
+    }
+    const Building *b = &g->buildings[target.slot];
+    int nearest = -1, distance = INT_MAX;
+    for (int i = 0; i < g->citizenCount; i++)
+        if (!g->citizens[i].owner && GameCitizenIsIdle(g, i))
+        {
+            int d = abs(g->citizens[i].x / 256 - b->x) + abs(g->citizens[i].y / 256 - b->y);
+            if (d < distance)
+            {
+                nearest = i;
+                distance = d;
+            }
+        }
+    if (nearest < 0)
+    {
+        ViewToast(ui, "No idle workers. Select a worker and right-click this site to resume building.");
+        return;
+    }
+    char why[256];
+    bool ok = GameCommandApply(g,
+                               (GameCommand){.type = CMD_ORDER,
+                                             .entity = GameCitizenRef(g, nearest),
+                                             .order = {.type = ORDER_BUILD,
+                                                       .targetKind = TARGET_BUILDING,
+                                                       .target = target,
+                                                       .x = b->x,
+                                                       .y = b->y}},
+                               why, sizeof(why));
+    ViewToast(ui, ok ? (ui->speed ? "An idle worker is assigned to resume construction."
+                                  : "Builder assigned. Press Space or Play to continue construction.")
+                     : why);
 }
 
 void ViewSelectBuilding(ViewContext *ui, int id)
@@ -144,7 +206,7 @@ void ViewHoldSelected(ViewContext *ui)
 void ViewTogglePanel(ViewContext *ui, int panel)
 {
     ui->panel = ui->panel == panel ? -1 : panel;
-    ui->dragging = false;
+    ViewCancelDrag(ui);
     ui->buildMenu = false;
     ui->build = -1;
     ui->commandPage = ui->orderMode = 0;

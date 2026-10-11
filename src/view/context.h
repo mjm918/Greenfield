@@ -16,10 +16,13 @@ typedef struct
     Texture2D texture;
     Rectangle rect[16];
     float baseline[16];
+    Vector2 pivot[16];
+    float cellHeight;
 } Atlas;
 typedef struct
 {
     Atlas objects, people, braids, bronze;
+    Atlas peopleNorth, braidsNorth, peopleJobs, braidsJobs, animals;
     Font font, title;
     RenderTexture2D canvas;
     Camera2D camera;
@@ -35,10 +38,13 @@ typedef struct
     EntityRef selection[MAX_CITIZENS], groups[10][MAX_CITIZENS];
     int selectionCount, groupCount[10], selectedGeneration, orderMode;
     bool dragging;
+    bool panCandidate, panning, dragAdd, mapDragging, showCursor;
+    int panButton;
     bool buildMenu;
     bool clickConsumed;
     int commandPage;
     Vector2 dragStart;
+    Vector2 panOrigin;
     GameState *g;
 } ViewContext;
 #endif

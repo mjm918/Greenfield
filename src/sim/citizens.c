@@ -20,6 +20,21 @@ int GameRoleCountFor(const GameState *g, int owner, int role)
         n += g->citizens[i].alive && g->citizens[i].owner == owner && g->citizens[i].role == role;
     return n;
 }
+bool GameCitizenIsIdle(const GameState *g, int id)
+{
+    if (id < 0 || id >= g->citizenCount)
+        return false;
+    const Citizen *c = &g->citizens[id];
+    return c->alive && c->unitType == CIVILIAN && c->training < 0 && c->job == JOB_IDLE &&
+           c->pathIndex >= c->pathLength && !c->orderCount && !EconomyCargo(c);
+}
+int GameIdleCountFor(const GameState *g, int owner)
+{
+    int count = 0;
+    for (int i = 0; i < g->citizenCount; i++)
+        count += g->citizens[i].owner == owner && GameCitizenIsIdle(g, i);
+    return count;
+}
 EntityRef GameCitizenRef(const GameState *g, int id)
 {
     return (EntityRef){id, id >= 0 && id < g->citizenCount ? g->citizens[id].generation : 0};

@@ -1,7 +1,8 @@
 #include "world.h"
-#include "layout.h"
+#include "animation.h"
 #include "assets.h"
 #include "context.h"
+#include "layout.h"
 #include "raymath.h"
 #include "widgets.h"
 #include <math.h>
@@ -240,66 +241,39 @@ static void BuildingDraw(ViewContext *ui, int id)
 static void PersonDraw(ViewContext *ui, int id, bool raider)
 {
     GameState *g = ui->g;
-    int x, y, job, hp, frame;
-    bool attacking = false, working = false;
-    Atlas person = !raider && id % 2 == 0 ? ui->braids : ui->people;
-    bool moving, flip = false;
     Citizen *c = &g->citizens[id];
     raider = c->owner != 0;
-    x = c->x;
-    y = c->y;
-    job = c->job;
-    hp = c->hp;
-    moving = c->pathIndex < c->pathLength;
-    attacking = c->job == JOB_FIGHT && c->attackCooldown > 0;
-    working = c->work > 0;
-    if (attacking)
-        moving = false;
-    if (moving)
-    {
-        int dest = c->path[c->pathIndex];
-        flip = dest % MAP_SIZE * 256 < x || dest / MAP_SIZE * 256 > y;
-    }
-    Vector2 foot = ViewIso(x / 256.0f + .5f, y / 256.0f + .5f);
+    int job = c->job, hp = c->hp;
+    SpritePose pose = ViewCitizenPose(ui, id);
+    Vector2 foot = ViewIso(c->x / 256.f + .5f, c->y / 256.f + .5f);
     foot.y += 5;
-    int row = 0;
-    if (job == JOB_DELIVER)
-        row = 2;
-    else if (attacking || (job == JOB_GUARD && !moving))
-        row = 3;
-    else if (!moving && working && job != JOB_IDLE && job != JOB_FIGHT)
-        row = 1;
-    frame = (int)(g->tick / 3 + (unsigned)id) % 4;
-    if (!moving && (job == JOB_IDLE || job == JOB_GUARD || job == JOB_DELIVER))
-        frame = 0;
-    Rectangle src = person.rect[row * 4 + frame];
-    float height = 34, ratio = height / (person.texture.height / 4 * .8f), width = src.width * ratio;
-    float h = src.height * ratio;
-    if (flip)
-        src.width = -src.width;
+    Rectangle bounds = ViewPoseBounds(pose, foot, 42.5f);
+    float h = foot.y - bounds.y;
     bool selected = false;
     for (int j = 0; j < ui->selectionCount; j++)
         if (ui->selection[j].slot == id)
             selected = true;
     if (!raider && selected)
         DrawEllipseLines((int)foot.x, (int)foot.y, 13, 5, ACCENT);
-    DrawTexturePro(person.texture, src, (Rectangle){foot.x - width / 2, foot.y - h, width, h},
-                   (Vector2){0, 0}, 0, raider ? (Color){245, 158, 137, 255} : WHITE);
+    ViewPoseDraw(pose, foot, 42.5f, raider ? (Color){245, 158, 137, 255} : WHITE);
     if (c->unitType)
     {
+        int side = pose.flip ? -1 : 1;
         Color weapon = c->equipped ? (Color){219, 154, 71, 255} : PAPER;
         if (c->unitType == SPEARMAN)
         {
-            DrawLineEx((Vector2){foot.x + 9, foot.y}, (Vector2){foot.x + 9, foot.y - 39}, 2, weapon);
-            DrawEllipse((int)foot.x - 8, (int)foot.y - 15, 5, 7, raider ? RUST : SAGE);
+            DrawLineEx((Vector2){foot.x + side * 9, foot.y}, (Vector2){foot.x + side * 9, foot.y - 39}, 2,
+                       weapon);
+            DrawEllipse((int)foot.x - side * 8, (int)foot.y - 15, 5, 7, raider ? RUST : SAGE);
         }
         else if (c->unitType == AXEMAN)
         {
-            DrawLineEx((Vector2){foot.x + 8, foot.y - 4}, (Vector2){foot.x + 13, foot.y - 27}, 2, ACCENT);
-            DrawRectangle((int)foot.x + 10, (int)foot.y - 28, 8, 5, weapon);
+            DrawLineEx((Vector2){foot.x + side * 8, foot.y - 4}, (Vector2){foot.x + side * 13, foot.y - 27},
+                       2, ACCENT);
+            DrawRectangle((int)foot.x + side * 10, (int)foot.y - 28, 8, 5, weapon);
         }
         else
-            DrawCircleLines((int)foot.x + 11, (int)foot.y - 22, 4, weapon);
+            DrawCircleLines((int)foot.x + side * 11, (int)foot.y - 22, 4, weapon);
     }
     if (hp < 900 || raider)
         ViewBar(foot.x - 13, foot.y - h - 7, 26, (float)hp / 1000, raider ? RUST : SAGE);
@@ -315,14 +289,16 @@ void ViewWorldDraw(ViewContext *ui)
     Camera2D renderCamera = ui->camera;
     renderCamera.offset = Vector2Scale(renderCamera.offset, RENDER_SCALE);
     renderCamera.zoom *= RENDER_SCALE;
-    BeginScissorMode(0, WORLD_TOP * RENDER_SCALE, SCREEN_W * RENDER_SCALE, (SCREEN_H - WORLD_TOP) * RENDER_SCALE);
+    BeginScissorMode(0, WORLD_TOP * RENDER_SCALE, SCREEN_W * RENDER_SCALE,
+                     (SCREEN_H - WORLD_TOP) * RENDER_SCALE);
     BeginMode2D(renderCamera);
     TerrainDraw(ui);
     GameState *g = ui->g;
-    DrawItem items[TILE_COUNT + MAX_BUILDINGS + MAX_CITIZENS + 4];
+    DrawItem items[TILE_COUNT + MAX_BUILDINGS + MAX_CITIZENS + MAX_WILDLIFE + 4];
     int count = 0;
     for (int t = 0; t < TILE_COUNT; t++)
-        if (g->tiles[t].node && Visible(ui, t % MAP_SIZE + .5f, t / MAP_SIZE + .5f, 150))
+        if (g->tiles[t].node && g->tiles[t].node != NODE_GAME &&
+            Visible(ui, t % MAP_SIZE + .5f, t / MAP_SIZE + .5f, 150))
             items[count++] = (DrawItem){0, t, (float)(t % MAP_SIZE + t / MAP_SIZE) + 1};
     for (int i = 0; i < g->buildingCount; i++)
     {
@@ -335,6 +311,13 @@ void ViewWorldDraw(ViewContext *ui)
     for (int i = 0; i < g->citizenCount; i++)
         if (g->citizens[i].alive && Visible(ui, g->citizens[i].x / 256.f, g->citizens[i].y / 256.f, 64))
             items[count++] = (DrawItem){2, i, (g->citizens[i].x + g->citizens[i].y) / 256.0f + 1};
+    for (int i = 0; i < g->wildlifeCount; i++)
+    {
+        const Wildlife *a = &g->wildlife[i];
+        Vector2 p = ViewAnimalPosition(ui, i);
+        if (GameWildlifeForTile(g, a->home) && Visible(ui, p.x, p.y, 90))
+            items[count++] = (DrawItem){3, i, p.x + p.y};
+    }
     // Draw ground shadows together. Interleaving thousands of primitive shadows
     // and atlas sprites flushed the GPU batch for almost every tree in overview.
     for (int i = 0; i < count; i++)
@@ -361,11 +344,19 @@ void ViewWorldDraw(ViewContext *ui)
             width = spriteWidth * .35f;
             height = spriteWidth * .12f;
         }
-        else
+        else if (item.kind == 2)
         {
             Citizen *c = &g->citizens[item.id];
             foot = ViewIso(c->x / 256.f + .5f, c->y / 256.f + .5f);
             foot.y += 4;
+        }
+        else
+        {
+            Vector2 p = ViewAnimalPosition(ui, item.id);
+            foot = ViewIso(p.x, p.y);
+            foot.y += 5;
+            width = 14;
+            height = 5;
         }
         DrawEllipse((int)foot.x, (int)foot.y, width, height, Fade(INK, .15f));
     }
@@ -380,11 +371,8 @@ void ViewWorldDraw(ViewContext *ui)
             Tile *t = &g->tiles[item.id];
             Vector2 foot = ViewIso(x + .5f, y + .5f);
             foot.y += 8;
-            int sprite = t->node == NODE_TREE                             ? 12
-                         : (t->node == NODE_STONE || t->node == NODE_ORE) ? 13
-                         : t->node == NODE_BERRIES                        ? 14
-                                                                          : 15;
-            float width = t->node == NODE_TREE ? 64 : t->node == NODE_GAME ? 42 : 50;
+            int sprite = t->node == NODE_TREE ? 12 : (t->node == NODE_STONE || t->node == NODE_ORE) ? 13 : 14;
+            float width = t->node == NODE_TREE ? 64 : 50;
             Color tint = t->node == NODE_ORE    ? (Color){204, 142, 84, 255}
                          : t->node == NODE_TREE ? ViewMix(WHITE, (Color){194, 218, 207, 255}, snow * .7f)
                                                 : WHITE;
@@ -397,6 +385,12 @@ void ViewWorldDraw(ViewContext *ui)
             BuildingDraw(ui, item.id);
         else if (item.kind == 2)
             PersonDraw(ui, item.id, false);
+        else if (item.kind == 3)
+        {
+            Vector2 p = ViewAnimalPosition(ui, item.id), foot = ViewIso(p.x, p.y);
+            foot.y += 5;
+            ViewPoseDraw(ViewAnimalPose(ui, item.id), foot, 52, WHITE);
+        }
     }
     const int sites[2][2] = {{38, 38}, {56, 56}};
     for (int i = 0; i < 2; i++)

@@ -7,7 +7,7 @@ main.c -> game_view.c -> view/* -> game.h (queries and commands)
        -> reference.c / scene.fs
 
 game.c -> sim/* -> GameState (both factions and the shared valley)
-save.c -> GameValidate -> explicit version-2 wire format
+save.c -> GameValidate -> explicit version-3 wire format (also reads country v2)
 ```
 
 `greenfield_sim` has no raylib dependency. Simulation uses integer ticks and the RNG in `GameState`, never rendering time, input, filesystem access or platform randomness. `game.c` orchestrates initialization, dispatch and the fixed 100 ms tick. `save.c` alone owns persistence. The UI and rival AI both submit `GameCommandApply` commands.
@@ -19,6 +19,7 @@ save.c -> GameValidate -> explicit version-2 wire format
 | `game.c` | Initialization, command dispatch, tick scheduling, event log and deterministic RNG |
 | `sim/definitions.c` | Resource/role names, building/discovery/age/unit definitions, recruitment and equipment costs |
 | `sim/world.c` | Fixed valley, walkability, owner-aware gates, BFS routes, congestion recovery and movement |
+| `sim/wildlife.c` | Bounded hunting-ground roaming, walking/running, obstacle checks and per-animal deterministic RNG |
 | `sim/citizens.c` | Entity creation/reuse, population, deaths and actual civilian role/area/priority changes |
 | `sim/orders.c` | Validated direct intent, order queues, interruption and rally instructions |
 | `sim/jobs.c` | Select and execute work using orders or actual roles; route/retry, delivery and repair |
@@ -71,7 +72,7 @@ Blueprints reserve occupancy against overlapping construction but remain walkabl
 1. Increment time; apply survival and resolve deaths/lost cargo.
 2. Run shared combat and resolve combat deaths.
 3. Resolve raid lifecycle, diplomacy effects and surrendered buildings.
-4. Grow crops; execute jobs by priority and citizen order.
+4. Grow crops; move wildlife; execute jobs by priority and citizen order.
 5. Advance production queues.
 6. Let enabled AI factions issue ordinary commands.
 7. Evaluate milestones, country victory and defeat.
@@ -85,8 +86,9 @@ Iteration, BFS neighbor order, RNG calls and update order are replay-sensitive. 
 | Module | Responsibility |
 | --- | --- |
 | `view/assets.c` | Packaged atlases/fonts, alpha bounds, mipmaps and sprite drawing |
-| `view/world.c` | Isometric transforms, shared drawing/picking geometry, depth order, previews and state-driven animation |
-| `view/widgets.c` | Existing typography, stepped borders, buttons, bars and hit checks |
+| `view/world.c` | Isometric transforms, shared drawing/picking geometry, depth order and previews |
+| `view/animation.c` | State-driven directional poses, stable sprite anchors, animal interpolation and shared draw/pick bounds |
+| `view/widgets.c` | Existing typography, stepped borders, buttons, bars, hit checks and the code-drawn hand cursor |
 | `view/layout.h` | Shared viewport, adaptive command tray, minimap and overlay geometry for rendering and input |
 | `view/hud.c` | Compact resources/rates, warnings, speeds, minimap, construction palette and world hit regions |
 | `view/selection.c` | Floating contextual tray: units, buildings, occupied production queues and command submenus |
@@ -99,14 +101,30 @@ Input uses logical 1440 × 900 coordinates. Below the 48px header, the world ren
 
 ## Persistence and compatibility
 
-Save version 2 uses the new `country.gfv2` slot. Old saves are not migrated or removed. All persistent fields have explicit little-endian serialization; no pointers or raw C struct dumps. The serializer also supplies the full-state hash. Validate, write temporary file, flush/sync, atomic rename. Loading validates a separate candidate and commits it only on success. Failed loading blocks autosave until a deliberate recovery action.
+Save version 3 keeps the existing `country.gfv2` slot. Country version-2 files load their unchanged payload and initialize facing/wildlife in memory; loading does not write the file. The next ordinary save writes version 3. Historical village version-1 files remain unsupported and untouched. All persistent fields have explicit little-endian serialization; no pointers or raw C struct dumps. The serializer also supplies the full-state hash. Validate, write temporary file, flush/sync, atomic rename. Loading validates a separate candidate and commits it only on success. Failed loading blocks autosave until a deliberate recovery action.
 
-Add serialization and validation alongside every persistent state change. One added field must not create a parallel save format or derived authoritative store. Save payloads are larger; asset loading adds one PNG. Existing manual/autosave frequency is unchanged. No network, database, background task or runtime dependency is added.
+Add serialization and validation alongside every persistent state change. One added field must not create a parallel save format or derived authoritative store. The animation extension adds 2,180 bytes per save and five packaged PNG reads at startup. Existing manual/autosave frequency is unchanged. No network, database, background task or runtime dependency is added.
 
 ## Tests and intentional gameplay baselines
 
 `tests/rts_tests.c` checks the new rules at owning boundaries, including conservation, reservations, generation reuse, direct orders, gate access, training arrival/cancellation/death, progression, metallurgy, repair, survival, combat, persistence failures and deterministic stepping. `test_view.c` drives the production input adapters with controlled platform input. `test_capacity.c` explicitly builds a maximum-population stress fixture.
 
-`tests/campaign.c` is a test-only player, never linked into the game. Treaty and military campaigns issue ordinary validated commands without stock/population/health injection. They check the target timings, recover from food shortage, suffer theft, save/load midway and complete the appropriate ending. Both compare version-2 full-state checkpoints. Their faster execution measures simulated time; it is not a human playtest.
+`tests/campaign.c` is a test-only player, never linked into the game. Treaty and military campaigns issue ordinary validated commands without stock/population/health injection. They check the target timings, recover from food shortage, suffer theft, save/load midway and complete the appropriate ending. Both compare version-3 full-state checkpoints. Their faster execution measures simulated time; it is not a human playtest.
 
 Historical version-1 save/hash fixtures are retained read-only. Old test source that depended on the retired single-faction/raider model is removed. It cannot prove intentional gameplay changes correct. See `tests/fixtures/README.md` for the explicit new baseline and `docs/country-validation.md` for evidence and remaining limits.
+
+## Directional animation and wildlife
+
+Citizen facing is persistent simulation state. Movement faces the next route step; work faces its actual resource or building; combat uses its chosen target. Resetting a job retains the last facing. Four isometric orientations use front/rear sheets and horizontal mirroring. The original front sheets remain in use for walking, chopping, carrying and spear work; specialist sheets provide hands, picks, hammers and hoes. Animation selection is derived from the current job, path and tick, with no second work state machine. Sprite scale and foot anchors remain stable across a clip.
+
+Each hunting ground has one representative deer, roaming at most two tiles from that resource site. Deer alternate idle/walk and run away from nearby living citizens of either faction. They use existing walkability, additionally avoid occupied structures and mineral rocks, and can pass under forest canopies. Their RNG does not consume the economy/AI random stream. Depleted grounds hide their deer until resource renewal. Hunting still draws food/hides from the original tile through the existing work-and-delivery ledger; there is no animal inventory or separate hunting economy. Clicking a moving deer resolves to that ground. This is bounded wildlife movement, not an individual-prey chase/combat system.
+
+`tests/test_wildlife.c` covers facing, obstacle recovery, faster flight, independent RNG, pause, persistence and country-v2 compatibility. View tests cover directional clip selection, interpolation, moving-animal picking and exported visual fixtures.
+
+## Construction recovery and camera gestures
+
+The idle counter, idle selection and Resume building action share `GameCitizenIsIdle` / `GameIdleCountFor` in the citizen owner. Assigned role counts remain separate for workforce/AI allocation: an idle builder still has the builder role. Available citizens are living civilians with no active job, route, queued orders, cargo or training. No second stored idle flag is introduced.
+
+`ViewResumeConstruction` chooses the nearest idle player citizen and submits the existing `CMD_ORDER / ORDER_BUILD`. It never places a duplicate site or charges materials. `OrdersChoose` routes repair orders on unfinished buildings into `JOB_BUILD`, including queued orders and incomplete hut upgrades; existing job, building and economy owners handle labor and receipts.
+
+The input owner distinguishes a click, selection drag and empty-ground pan using the existing six-pixel threshold. Shift-drag adds a group; a drag starting over a citizen also selects. Left and middle pans retain their screen/camera origins, operate in logical coordinates, and keep ownership across HUD boundaries until release. Minimap dragging stays in its existing HUD owner. `ViewCancelDrag` clears all transient gesture state for overlays, load, new game and focus loss. Nothing is serialized. The hand is drawn after composition, above all UI and letterboxing; the OS cursor is restored outside the focused game window and on exit.

@@ -75,8 +75,8 @@ static void Orders(ViewContext *ui)
             return;
         }
         OrderButton(ui, 1, "Gather", ORDER_GATHER, "Click a natural resource. Shift appends the order.");
-        OrderButton(ui, 2, "Repair", ORDER_REPAIR,
-                    "Click a damaged friendly building. Repair requires worker labor and materials.");
+        OrderButton(ui, 2, "Build / repair", ORDER_REPAIR,
+                    "Click an unfinished site to resume building, or a damaged building to repair it.");
         OrderButton(ui, 3, "Deliver", ORDER_DELIVER,
                     "Deliver carried goods to the nearest available friendly depot.");
         if (Action(ui, 4, "Workforce  W", true, "Assign jobs to selected civilians or find idle workers.",
@@ -143,7 +143,12 @@ static void BuildingCommands(ViewContext *ui, Building *b)
         return;
     if (!b->complete)
     {
-        if (Action(ui, 0, "Cancel building", true,
+        if (Action(ui, 0, "Resume building", true,
+                   "Assign the nearest idle worker. Or select workers and right-click this site. Reserved "
+                   "materials are reused.",
+                   NULL))
+            ViewResumeConstruction(ui);
+        if (Action(ui, 1, "Cancel building", true,
                    "Remove this construction site and refund its reserved materials.", NULL))
             Command(ui,
                     (GameCommand){.type = CMD_CANCEL, .a = -3, .entity = GameBuildingRef(g, ui->selected)});

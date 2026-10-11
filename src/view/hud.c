@@ -55,7 +55,7 @@ void ViewHeader(ViewContext *ui)
     }
     DrawLine(567, 10, 567, 38, Fade(MUTED, .25f));
     ViewText(ui, TextFormat("%d/%d people", GamePopulation(g), GameHousing(g)), 582, 14, 18, PAPER);
-    if (ViewButton(ui, (Rectangle){704, 8, 74, 32}, TextFormat("Idle %d", GameRoleCount(g, IDLE)), false,
+    if (ViewButton(ui, (Rectangle){704, 8, 74, 32}, TextFormat("Idle %d", GameIdleCountFor(g, 0)), false,
                    true))
         ViewSelectIdle(ui);
     if (ViewButton(ui, (Rectangle){788, 8, 136, 32}, AGES[f->age].name, false, true))
@@ -172,7 +172,12 @@ static void MiniMap(ViewContext *ui)
     for (int i = 0; i < 4; i++)
         DrawLineV(points[i], points[(i + 1) % 4], PAPER);
     EndScissorMode();
-    if (ViewClick(ui, map))
+    bool clicked = ViewClick(ui, map);
+    if (clicked)
+        ui->mapDragging = true;
+    if (!ui->allowInput || !IsMouseButtonDown(MOUSE_BUTTON_LEFT))
+        ui->mapDragging = false;
+    if (clicked || ui->mapDragging)
     {
         float mx = (ui->mouse.x - cx) / sx, my = (ui->mouse.y - cy) / sy;
         ui->camera.target =
@@ -204,7 +209,7 @@ void ViewWorldHUD(ViewContext *ui)
         if (ViewClick(ui, r))
             ViewTogglePanel(ui, g->factions[1].raidActive || g->factions[1].raidWarning ? 3 : 1);
     }
-    if (ui->dragging)
+    if (ui->dragging && !ui->panCandidate)
     {
         Rectangle r = {fminf(ui->dragStart.x, ui->mouse.x), fminf(ui->dragStart.y, ui->mouse.y),
                        fabsf(ui->mouse.x - ui->dragStart.x), fabsf(ui->mouse.y - ui->dragStart.y)};

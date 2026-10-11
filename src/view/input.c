@@ -1,5 +1,6 @@
 #include "input.h"
 #include "actions.h"
+#include "animation.h"
 #include "context.h"
 #include "hud.h"
 #include "layout.h"
@@ -101,9 +102,30 @@ static UnitOrder ContextOrder(ViewContext *ui)
                  : (b->type == FARM || b->type == WORKSHOP || b->type == SMELTER) ? ORDER_WORK
                                                                                   : ORDER_DELIVER;
     }
-    else if (g->tiles[ui->hoverTile].node)
-        o.type = ORDER_GATHER;
+    else
+    {
+        int animal = ViewAnimalAt(ui);
+        if (animal >= 0)
+        {
+            o.type = ORDER_GATHER;
+            o.x = animal % MAP_SIZE;
+            o.y = animal / MAP_SIZE;
+        }
+        else if (g->tiles[ui->hoverTile].node)
+            o.type = ORDER_GATHER;
+    }
     return o;
+}
+static void ClampCamera(ViewContext *ui)
+{
+    ui->camera.target.x = Clamp(ui->camera.target.x, -MAP_SIZE * 32, MAP_SIZE * 32);
+    ui->camera.target.y = Clamp(ui->camera.target.y, 0, MAP_SIZE * 32);
+}
+static void PanCamera(ViewContext *ui)
+{
+    Vector2 distance = Vector2Subtract(ui->mouse, ui->dragStart);
+    ui->camera.target = Vector2Subtract(ui->panOrigin, Vector2Scale(distance, 1 / ui->camera.zoom));
+    ClampCamera(ui);
 }
 void ViewInput(ViewContext *ui, float dt)
 {
@@ -144,7 +166,7 @@ void ViewInput(ViewContext *ui, float dt)
         ui->help = !ui->help;
     if (ui->menu || ui->help || g->lost || (!ui->winSeen && g->won))
     {
-        ui->dragging = false;
+        ViewCancelDrag(ui);
         return;
     }
     if (IsKeyPressed(KEY_SPACE))
@@ -177,9 +199,12 @@ void ViewInput(ViewContext *ui, float dt)
         ToggleBorderlessWindowed();
     if (ViewPanelOpen(ui))
     {
-        ui->dragging = false;
+        ViewCancelDrag(ui);
         return;
     }
+    // A minimap press owns the gesture until release, even outside its rectangle.
+    if (ui->mapDragging)
+        return;
     if (!ViewSelectedWorkers(ui))
     {
         ui->buildMenu = false;
@@ -246,25 +271,37 @@ void ViewInput(ViewContext *ui, float dt)
     if (ViewWorldHit(ui))
     {
         float wheel = GetMouseWheelMove();
-        if (wheel)
+        if (wheel && !ui->dragging && !ui->panning)
         {
             Vector2 before = GetScreenToWorld2D(ui->mouse, ui->camera);
             ui->camera.zoom = Clamp(ui->camera.zoom * powf(1.12f, wheel), .14f, 2.3f);
             Vector2 after = GetScreenToWorld2D(ui->mouse, ui->camera);
             ui->camera.target = Vector2Add(ui->camera.target, Vector2Subtract(before, after));
         }
-        if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE))
+        if (IsMouseButtonPressed(MOUSE_BUTTON_MIDDLE))
         {
-            Vector2 d = GetMouseDelta();
-            float scale = ViewMinF(GetScreenWidth() / (float)SCREEN_W, GetScreenHeight() / (float)SCREEN_H);
-            ui->camera.target.x -= d.x / (scale * ui->camera.zoom);
-            ui->camera.target.y -= d.y / (scale * ui->camera.zoom);
+            ViewCancelDrag(ui);
+            ui->panning = true;
+            ui->panButton = MOUSE_BUTTON_MIDDLE;
+            ui->dragStart = ui->mouse;
+            ui->panOrigin = ui->camera.target;
         }
+    }
+    if (ui->panning && ui->panButton == MOUSE_BUTTON_MIDDLE)
+    {
+        PanCamera(ui);
+        if (!IsMouseButtonDown(MOUSE_BUTTON_MIDDLE))
+            ViewCancelDrag(ui);
+        return;
     }
     ui->camera.target.x += (IsKeyDown(KEY_RIGHT) - IsKeyDown(KEY_LEFT)) * dt * 550 / ui->camera.zoom;
     ui->camera.target.y += (IsKeyDown(KEY_DOWN) - IsKeyDown(KEY_UP)) * dt * 550 / ui->camera.zoom;
-    ui->camera.target.x = Clamp(ui->camera.target.x, -MAP_SIZE * 32, MAP_SIZE * 32);
-    ui->camera.target.y = Clamp(ui->camera.target.y, 0, MAP_SIZE * 32);
+    ClampCamera(ui);
+    if (ui->dragging && IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))
+    {
+        ViewCancelDrag(ui);
+        return;
+    }
     if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) && ViewWorldHit(ui) && ui->hoverTile >= 0)
     {
         if (ui->build >= 0 || ui->orderMode)
@@ -331,10 +368,23 @@ void ViewInput(ViewContext *ui, float dt)
         }
         ui->dragging = true;
         ui->dragStart = ui->mouse;
+        ui->dragAdd = shift;
+        ui->panCandidate = !shift && PersonAt(ui) < 0 && BuildingAt(ui) < 0;
+        ui->panOrigin = ui->camera.target;
+    }
+    if (ui->dragging && ui->panCandidate && (ui->panning || Vector2Distance(ui->mouse, ui->dragStart) > 6))
+    {
+        ui->panning = true;
+        ui->panButton = MOUSE_BUTTON_LEFT;
+        PanCamera(ui);
+        if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT))
+            ViewCancelDrag(ui);
+        return;
     }
     if (ui->dragging && !IsMouseButtonDown(MOUSE_BUTTON_LEFT))
     {
-        ui->dragging = false;
+        shift = ui->dragAdd;
+        ViewCancelDrag(ui);
         float distance = Vector2Distance(ui->mouse, ui->dragStart);
         if (distance > 6)
         {

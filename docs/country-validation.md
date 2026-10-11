@@ -1,15 +1,16 @@
 # Country expansion validation
 
 Local macOS validation, 2026-10-11. Implementation is based on refactor commit
-`a7b4253`. These results cover the country expansion and compact HUD and belong to the
-version-2 rules, not the historical version-1 hashes.
+`a7b4253`. These results cover the country expansion, compact HUD and the facing/wildlife fix based on `6a7988c`. The current codec is version 3; the country gameplay rules remain unchanged.
 
 ## Automated acceptance
 
-Release CTest: **9/9 passed** after the contextual HUD update. The simulation
-executable checks 351 assertions; input tests check 71, and the hidden-window HUD
-run checks 97 (including those same 71). Counts include repeated assertions and
+Release CTest: **10/10 passed** after the facing/wildlife update (22.56 seconds). The simulation
+executable checks 351 assertions; wildlife/facing checks 47; input/pose tests check 99, and the hidden-window HUD
+run checks 133 (including those same 99). Counts include repeated assertions and
 are not a count of independent gameplay scenarios.
+
+After the facing/wildlife update, AddressSanitizer and UndefinedBehaviorSanitizer passed **4/4 focused suites**: simulation, wildlife, input/pose and hidden-window HUD (5.41 seconds).
 
 Before the HUD update, AddressSanitizer and UndefinedBehaviorSanitizer: **5/5 passed** in the
 RelWithDebInfo build, covering simulation, both complete campaigns, population
@@ -40,7 +41,7 @@ seconds without reported sanitizer failures.
 - Identical command streams match at 30/60 render frames per second and 1×/2×/4×
   for equivalent elapsed simulation time. Both rival AI and actual work are active.
   Pausing leaves simulation unchanged.
-- Both country campaigns enforce 13 full-state checkpoints each. A version-2
+- Both country campaigns enforce 13 full-state checkpoints each. A version-3
   save/load at minute 75 preserves their continued result.
 
 ## Campaigns
@@ -59,15 +60,15 @@ headless execution is not a completed wall-clock or human playthrough.
 
 Ending hashes:
 
-- Treaty: `08117f8245a283bc`
-- Military: `f245c7a9fb1b63ce`
+- Treaty: `714bd3183f24a208`
+- Military: `e2c8fb99fed80876`
 
 CTest writes replay logs and ending saves under `build/evidence/`. The current
-full save payload including its header is 976,052 bytes.
+full save payload including its header is 978,232 bytes.
 
 ## Presentation and performance
 
-The existing reference-fidelity checks pass. Art tests inspect 52 atlas cells,
+The existing reference-fidelity checks pass. Art tests inspect 132 atlas cells,
 alpha transparency, a 2880 × 1800 capture, world detail and smooth text edges.
 Winter, Bronze settlement, selected-group controls, all seven discoveries,
 building preview and full-valley screenshots were inspected. Native macOS checks of the earlier layout
@@ -154,3 +155,23 @@ checks. No parallel resource pool, worker-allocation budget or serializer exists
 Runtime adds one local PNG asset read and a larger payload to the existing
 manual/two-minute autosave path. No network calls, accounts, services, telemetry,
 background workers or runtime dependencies were added.
+
+## Facing and moving wildlife verification
+
+- The original rendering bug reset horizontal facing when citizens stopped and had no rear-facing sprite option. Movement, work and combat now write facing at their existing execution boundaries. Work targets choose hands/pick/hammer/hoe/chop/spear clips; stopping retains the heading.
+- Six initial deer all moved in fixed-tick tests. Tests cover walk/run speed, turning away from a person mid-step, walkable terrain, blocked-route recovery, bounded roaming, depletion/renewal visibility and pause. Animal RNG is independent of the economy/AI stream.
+- Version-3 save/load retains facing, positions, goals, gait, interpolation steps and RNG; continued hashes match. Invalid wildlife state is rejected before writing and leaves the last save usable. A constructed country-v2 payload loads and can subsequently save in v3. A separately retained real v2 campaign save loaded through the application capture path.
+- Both complete scripted campaigns retained their timing, shortage and raid outcomes. Their entire original v2 ending payloads match the saved pre-change payloads byte-for-byte. Only the appended facing/wildlife data changes the full-state checkpoints. These remain accelerated scripted runs, not new wall-clock human playthroughs.
+- Inspected `build/evidence/work-facing.png`, `animal-walking.png`, `animal-running.png` and `v2-save-compatible.png`. The first three are explicit rendering fixtures; workers surround a bush and a deer reacts to a nearby citizen. Tests exercise the real renderer and click-to-hunting-ground adapter. The reference-fidelity test remains passing.
+- Reused the original front citizen sprites, scenery, job targets, movement, economy and serializer. Added five matching atlases using the built-in image tool, one bounded wildlife owner and one shared pose/draw/pick module. Removed static hunting-ground animal drawing; there is no duplicate animal render path, resource inventory or harvesting rule.
+- Runtime change: five additional PNG reads at startup, 2,180 more bytes per ordinary save, and one bounded wildlife pass per existing 100 ms tick. For the current six deer this scans at most 1,152 citizens per tick in a full 192-person world. No extra filesystem writes, save cadence, network calls, dependency or background thread.
+- The currently running player session was not restarted. Native interaction with that session and a new human playthrough are not claimed.
+
+## Construction recovery, idle workers and camera controls
+
+- Interrupted construction now has a contextual Resume building action. It assigns an idle civilian through the existing build command. The worker's Build / repair action also resumes unfinished sites through the authoritative order executor. Regression tests stop, save/load and resume construction for both factions, verify retained progress and reservations, and complete the projects without charging twice.
+- The header counter, both idle-worker buttons and automatic resume assignment share the citizen owner's availability query. A builder with no remaining work is eligible regardless of its retained role; queued orders, active work, routes, cargo, training, soldiers and dead citizens are excluded. No-idle feedback preserves the current selection.
+- Production input tests cover left-drag empty-ground panning, Shift-drag selection, retained selection and orders, the six-pixel threshold, returning below that threshold after starting a pan, HUD crossing, middle-button capture and overlay cancellation. Rendered HUD tests click both Idle buttons, Resume building and Build / repair, then verify actual construction progress. A held minimap drag updates the camera without another click.
+- The release build passed all **10/10 CTest tests**, run as six headless tests and four graphics tests. The rendered input/HUD executable reports **164 checks, zero failures**. Simulation, headless input and rendered HUD tests also passed **3/3 under AddressSanitizer and UndefinedBehaviorSanitizer**. The original reference capture still has zero differing pixels out of 1,441,170.
+- Inspected `build/evidence/controls-resume.png` and `controls-hand-grab.png` after the Mac was unlocked. They show the compact Resume/Cancel tray and the open/closed hand states. These are macOS GPU captures with controlled input, not interaction with the existing player session or a new human campaign playthrough.
+- Reused the command, jobs, construction, economy, camera, selection and UI palette owners. New surfaces are derived idle queries, a Resume UI action, transient gesture fields and a code-drawn cursor. Searches confirmed no second idle flag, material-charge path, construction operation or persistent camera state. This controls change adds no asset reads, save fields, filesystem writes, network calls, dependency or background task.

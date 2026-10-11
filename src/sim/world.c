@@ -61,6 +61,14 @@ int GameTile(int x, int y)
     return x < 0 || y < 0 || x >= MAP_SIZE || y >= MAP_SIZE ? -1 : y * MAP_SIZE + x;
 }
 
+int GameFacing(int dx, int dy, int fallback)
+{
+    if (!dx && !dy)
+        return fallback;
+    // Isometric screen axes: horizontal = x-y, depth = x+y.
+    return (dx + dy < 0 ? FACING_NE : FACING_SE) + (dx - dy < 0);
+}
+
 bool GameWalkable(const GameState *g, int x, int y)
 {
     int t = GameTile(x, y);
@@ -264,6 +272,7 @@ void WorldMoveCitizen(GameState *g, Citizen *c)
         }
     }
     int xx = (tile % MAP_SIZE) * 256, yy = (tile / MAP_SIZE) * 256, step = UNITS[c->unitType].moveStep;
+    c->facing = GameFacing(xx - c->x, yy - c->y, c->facing);
     if (c->x != xx)
         c->x += c->x < xx ? Min(step, xx - c->x) : -Min(step, c->x - xx);
     else if (c->y != yy)

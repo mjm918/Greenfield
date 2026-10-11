@@ -31,11 +31,11 @@ not replace or access the player's save. Preserve them during structural changes
 an intentional gameplay change needs an explicit explanation of affected baselines.
 
 
-# Country version-2 baseline
+# Country baseline provenance
 
 `rts-checkpoints.inc` was recorded on 2026-10-11 from the intentional country
 expansion based on `a7b4253`, using the new `GameInit`, `GameAdvance`, canonical
-serializer and `tests/campaign.c`. The source is not yet committed. Routine rival construction/research/recovery events do not masquerade as player
+serializer and `tests/campaign.c`. The expansion was committed as `6a7988c`. Routine rival construction/research/recovery events do not masquerade as player
 notifications, and the first-harvest event is emitted only once. These intentional
 event-log changes are part of the new full-state baseline. Each row is
 `{tick, treaty_hash, military_hash}`. It covers initialization and ten-minute
@@ -61,3 +61,9 @@ Recording writes candidates to stdout, never changes this fixture automatically.
 Explain the changed rules and inspect both campaigns before replacing expectations.
 UI rendering changes need not change simulation hashes. There is intentionally no
 v1 migration or comparison against the old refactor hashes.
+
+## Animation extension: version 3
+
+The active `rts-checkpoints.inc` was refreshed for the 2026-10-11 facing/wildlife fix based on `6a7988c`. Version 3 appends 2,180 bytes: citizen facing and bounded wildlife positions, goals, behavior, interpolation steps and independent RNG. The original version-2 payload remains unchanged. Both ending saves were compared byte-for-byte over their version-2 payload against the previously captured saves: identical. Village/country timing, shortage recovery, health, raids, resources and objectives are therefore preserved. The new full-state hashes include deterministic animal movement and facing, so the version-2 hashes no longer apply to the expanded serializer.
+
+The wildlife test also constructs a version-2 wire payload, loads it without changing its economy/terrain, then saves and continues in version 3. Old country files are read without writes; village version-1 remains unsupported. The current CTest campaigns enforce the new 26 checkpoints, save/load midway, and check the same gameplay outcomes.

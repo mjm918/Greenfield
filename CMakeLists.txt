@@ -21,7 +21,7 @@ target_compile_definitions(raylib PRIVATE
     SUPPORT_FILEFORMAT_JPG=1 SUPPORT_MODULE_RAUDIO=0 SUPPORT_MODULE_RMODELS=0)
 
 set(GREENFIELD_VIEW_SOURCES
-    src/view/actions.c src/view/assets.c src/view/hud.c src/view/input.c
+    src/view/actions.c src/view/animation.c src/view/assets.c src/view/hud.c src/view/input.c
     src/view/panels.c src/view/selection.c src/view/screens.c src/view/widgets.c src/view/world.c)
 add_executable(greenfield src/main.c src/reference.c src/game_view.c ${GREENFIELD_VIEW_SOURCES})
 target_link_libraries(greenfield PRIVATE raylib greenfield_sim)
@@ -69,7 +69,7 @@ endif()
 
 add_library(greenfield_sim STATIC
     src/game.c src/save.c
-    src/sim/definitions.c src/sim/validation.c src/sim/world.c
+    src/sim/definitions.c src/sim/validation.c src/sim/world.c src/sim/wildlife.c
     src/sim/citizens.c src/sim/buildings.c src/sim/economy.c src/sim/jobs.c
     src/sim/workshop.c src/sim/farming.c src/sim/survival.c src/sim/rivals.c
     src/sim/orders.c src/sim/production.c src/sim/progression.c src/sim/combat.c src/sim/ai.c)
@@ -78,6 +78,9 @@ if(NOT MSVC)
     target_compile_options(greenfield_sim PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 if(BUILD_TESTING)
+    add_executable(game_wildlife_tests tests/test_wildlife.c)
+    target_link_libraries(game_wildlife_tests PRIVATE greenfield_sim)
+    add_test(NAME wildlife COMMAND game_wildlife_tests)
     add_executable(game_tests tests/rts_tests.c)
     target_link_libraries(game_tests PRIVATE greenfield_sim)
     target_compile_definitions(game_tests PRIVATE
@@ -117,6 +120,11 @@ add_custom_command(TARGET greenfield POST_BUILD
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/settlement-atlas.png"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-atlas.png"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-atlas.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-north-atlas.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-north-atlas.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-jobs-atlas.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-jobs-atlas.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/deer-atlas.png"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceSans3-Regular.ttf"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceSans3-Semibold.ttf"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceSans3-LICENSE.md"
@@ -126,6 +134,11 @@ set_property(TARGET greenfield APPEND PROPERTY LINK_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/settlement-atlas.png"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-atlas.png"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-atlas.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-north-atlas.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-north-atlas.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-jobs-atlas.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-jobs-atlas.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/deer-atlas.png"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceSans3-Regular.ttf"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceSans3-Semibold.ttf"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceSans3-LICENSE.md")
@@ -139,6 +152,11 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-atlas.png"
         "${CMAKE_BINARY_DIR}/evidence/game-winter.png"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-atlas.png"
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/bronze-atlas.png")
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/bronze-atlas.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-north-atlas.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-north-atlas.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-jobs-atlas.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-jobs-atlas.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/deer-atlas.png")
     set_tests_properties(pixel_art PROPERTIES FIXTURES_REQUIRED game_image)
 endif()
