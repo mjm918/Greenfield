@@ -2,6 +2,7 @@
 #include "raylib.h"
 #include "rlgl.h"
 #include "sim/jobs.h"
+#include "sim/buildings.h"
 #include "sim/wildlife.h"
 #include "view/actions.h"
 #include "view/animation.h"
@@ -509,6 +510,138 @@ static void GatherFeedbackChecks(ViewContext *u)
     CHECK(u->orderMode == ORDER_GATHER && c->orderCount == 2 && strstr(u->toast, "Metallurgy"));
     Key(u, KEY_ESCAPE);
 }
+static void BuildingEditChecks(ViewContext *u)
+{
+    GameState *g = u->g;
+    GameInit(g);
+    ViewCancelBuildingEdit(u);
+    ViewCancelDrag(u);
+    g->tick = WINTER_END + 1800;
+    g->winterSurvived = 1;
+    g->factions[0].age = SETTLED_AGE;
+    u->menu = u->help = false;
+    u->toastTime = 0;
+    u->panel = u->selected = -1;
+    u->selectionCount = 1;
+    u->selection[0] = GameCitizenRef(g, 0);
+    u->buildMenu = true;
+    u->build = WORKSHOP;
+    u->buildRotation = 0;
+    u->orderMode = 0;
+    u->camera.target = ViewIso(34, 33);
+    u->camera.zoom = 1.5f;
+    for (int y = 27; y < 43; y++)
+        for (int x = 27; x < 43; x++)
+        {
+            Tile *t = &g->tiles[GameTile(x, y)];
+            t->node = NODE_NONE;
+            t->terrain = GRASS;
+        }
+    uint64_t before = GameHash(g);
+    Point(u, 32, 29);
+    Key(u, KEY_Q);
+    CHECK(u->buildRotation == 1 && GameHash(g) == before);
+    Building preview = {0};
+    char why[256];
+    CHECK(ViewBuildingPreview(u, &preview, why, sizeof(why)));
+    CHECK(GameBuildingWidth(&preview) == 2 && GameBuildingHeight(&preview) == 3);
+    CaptureControls(u, "evidence/build-rotated-preview.png");
+    pressedMouse = MOUSE_BUTTON_LEFT;
+    ViewInput(u, .016f);
+    pressedMouse = -1;
+    int id = g->tiles[GameTile(32, 29)].occupied;
+    CHECK(id >= 0 && g->buildings[id].rotation == 1);
+    Citizen *c = &g->citizens[0];
+    c->target = id;
+    while (!g->buildings[id].complete)
+        BuildingsWork(g, c);
+    JobsReset(c);
+    u->build = PALISADE;
+    u->buildRotation = 1;
+    heldKey = KEY_LEFT_SHIFT;
+    Point(u, 30, 28);
+    pressedMouse = MOUSE_BUTTON_LEFT;
+    ViewInput(u, .016f);
+    pressedMouse = -1;
+    heldKey = 0;
+    int repeat = g->tiles[GameTile(30, 28)].occupied;
+    CHECK(repeat >= 0 && g->buildings[repeat].rotation == 1);
+    CHECK(u->build == PALISADE && u->buildRotation == 1);
+    Key(u, KEY_ESCAPE);
+    ViewSelectBuilding(u, id);
+    int slot = ViewBuildingEditSlot(&g->buildings[id]);
+    HudRectClick(u, ViewCommandRect(u, slot));
+    CHECK(u->movingBuilding && u->editBuilding.slot == id);
+    Point(u, 36, 29);
+    CaptureControls(u, "evidence/building-move-preview.png");
+    Key(u, KEY_Q);
+    CHECK(u->buildRotation == 0 && g->buildings[id].rotation == 1);
+    g->tiles[GameTile(36, 29)].terrain = WATER;
+    pressedMouse = MOUSE_BUTTON_LEFT;
+    ViewInput(u, .016f);
+    pressedMouse = -1;
+    CHECK(u->movingBuilding && g->buildings[id].x == 32 && strstr(u->toast, "Water"));
+    g->tiles[GameTile(36, 29)].terrain = GRASS;
+    pressedMouse = MOUSE_BUTTON_LEFT;
+    ViewInput(u, .016f);
+    pressedMouse = -1;
+    CHECK(!u->movingBuilding && g->buildings[id].x == 36 && g->buildings[id].rotation == 0);
+    CHECK(g->tiles[GameTile(32, 29)].occupied == -1);
+    HudRectClick(u, ViewCommandRect(u, slot + 1));
+    CHECK(g->buildings[id].rotation == 1 && strstr(u->toast, "rotated"));
+    CaptureControls(u, "evidence/building-edit-controls.png");
+    HudRectClick(u, ViewCommandRect(u, slot + 2));
+    CHECK(u->confirmDemolish && g->buildings[id].alive);
+    CaptureControls(u, "evidence/building-demolish-confirm.png");
+    Key(u, KEY_ESCAPE);
+    CHECK(!u->confirmDemolish && g->buildings[id].alive);
+    HudRectClick(u, ViewCommandRect(u, slot + 2));
+    HudRectClick(u, ViewCommandRect(u, 0));
+    CHECK(!g->buildings[id].alive && u->selected == -1 && !u->confirmDemolish);
+    // Stale move previews cannot act on a reused building slot.
+    id = BuildingsAdd(g, 0, SHELTER, 36, 29, true);
+    ViewSelectBuilding(u, id);
+    ViewMoveBuilding(u);
+    BuildingsDestroy(g, id);
+    CHECK(BuildingsAdd(g, 0, SHELTER, 36, 29, true) == id);
+    Key(u, KEY_Q);
+    CHECK(!u->movingBuilding && g->buildings[id].rotation == 0);
+    ViewSelectBuilding(u, id);
+    ViewMoveBuilding(u);
+    ViewTogglePanel(u, 0);
+    CHECK(!u->movingBuilding && ViewPanelOpen(u));
+    ViewTogglePanel(u, 0);
+    // Straight connected runs on both tile axes, with an entrance in each.
+    for (int rotation = 0; rotation < 2; rotation++)
+        for (int segment = 0; segment < 6; segment++)
+        {
+            int x = rotation ? 38 : 28 + segment, y = rotation ? 32 + segment : 33;
+            int wall = BuildingsAdd(g, 0, segment == 2 ? GATE : PALISADE, x, y, true);
+            g->buildings[wall].rotation = rotation;
+            Rectangle bounds = ViewBuildingBounds(u, &g->buildings[wall]);
+            CHECK(bounds.width < 45 && bounds.width > 32);
+        }
+    ViewSelectBuilding(u, g->tiles[GameTile(30, 33)].occupied);
+    CaptureControls(u, "evidence/wall-gate-alignment.png");
+    // Picking uses the same transformed sprite bounds as rendering.
+    int gate = u->selected;
+    Rectangle bounds = ViewBuildingBounds(u, &g->buildings[gate]);
+    u->mouse = GetWorldToScreen2D((Vector2){bounds.x + bounds.width / 2, bounds.y + 8}, u->camera);
+    Vector2 tile = ViewTileAt(u, u->mouse);
+    u->hoverTile = GameTile((int)floorf(tile.x), (int)floorf(tile.y));
+    CHECK(g->tiles[u->hoverTile].occupied != gate);
+    ViewSelectBuilding(u, -1);
+    pressedMouse = heldMouse = MOUSE_BUTTON_LEFT;
+    ViewInput(u, .016f);
+    pressedMouse = heldMouse = -1;
+    ViewInput(u, .016f);
+    CHECK(u->selected == gate);
+    ViewMoveBuilding(u);
+    Key(u, KEY_H);
+    CHECK(!u->movingBuilding && u->help);
+    Key(u, KEY_ESCAPE);
+}
+
 static void CursorWindowChecks(ViewContext *u)
 {
     // Exercise the real window framebuffer: render-texture captures cannot
@@ -631,6 +764,7 @@ static void RenderChecks(ViewContext *u)
     RenderControlChecks(u);
     BuildFeedbackChecks(u);
     GatherFeedbackChecks(u);
+    BuildingEditChecks(u);
     CursorWindowChecks(u);
     ViewAssetsUnload(u);
     CloseWindow();
@@ -677,6 +811,8 @@ static void CompactSelectionChecks(ViewContext *u)
             break;
         }
     u->mouse = (Vector2){700, 850};
+    CHECK(!ViewWorldHit(u)); // The stockpile now has three contextual building actions.
+    u->mouse = (Vector2){900, 850};
     CHECK(ViewWorldHit(u));
 }
 static void ControlChecks(ViewContext *u)

@@ -200,7 +200,10 @@ int GameViewRun(GameState *game, int argc, char **argv, bool returning)
         Vector2 tile = ViewTileAt(ui, ui->mouse);
         ui->hoverTile = GameTile((int)floorf(tile.x), (int)floorf(tile.y));
         if (!IsWindowFocused())
+        {
             ViewCancelDrag(ui);
+            ViewCancelBuildingEdit(ui);
+        }
         if (!capture && IsWindowFocused())
             ViewInput(ui, dt);
         else if (captureBuild >= 0)

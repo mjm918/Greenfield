@@ -14,6 +14,67 @@ void ViewCancelDrag(ViewContext *ui)
     ui->dragging = ui->panCandidate = ui->panning = ui->mapDragging = false;
 }
 
+void ViewCancelBuildingEdit(ViewContext *ui)
+{
+    ui->movingBuilding = ui->confirmDemolish = false;
+    ui->editBuilding = (EntityRef){0};
+}
+
+void ViewMoveBuilding(ViewContext *ui)
+{
+    EntityRef ref = {ui->selected, ui->selectedGeneration};
+    if (!GameBuildingValid(ui->g, ref) || ui->g->buildings[ref.slot].owner)
+        return;
+    ViewCancelDrag(ui);
+    ui->editBuilding = ref;
+    ui->buildRotation = ui->g->buildings[ref.slot].rotation;
+    ui->movingBuilding = true;
+    ui->confirmDemolish = false;
+    ui->build = -1;
+    ui->orderMode = 0;
+    ViewToast(ui, "Move: click a new position. Q rotates; Esc cancels. No material cost.");
+}
+
+void ViewRotateBuilding(ViewContext *ui)
+{
+    if (ui->build >= 0 || ui->movingBuilding)
+    {
+        ui->buildRotation = 1 - ui->buildRotation;
+        return;
+    }
+    char why[256];
+    bool ok = GameCommandApply(ui->g,
+                              (GameCommand){.type = CMD_ROTATE_BUILDING,
+                                            .entity = {ui->selected, ui->selectedGeneration}},
+                              why, sizeof(why));
+    ViewToast(ui, ok ? "Building rotated." : why);
+}
+
+bool ViewBuildingPreview(ViewContext *ui, Building *preview, char *reason, int size)
+{
+    if (ui->movingBuilding)
+    {
+        if (!GameBuildingValid(ui->g, ui->editBuilding))
+        {
+            if (reason && size > 0)
+                snprintf(reason, (size_t)size, "That building no longer exists.");
+            return false;
+        }
+        *preview = ui->g->buildings[ui->editBuilding.slot];
+    }
+    else
+        *preview = (Building){.type = ui->build};
+    preview->x = ui->hoverTile % MAP_SIZE;
+    preview->y = ui->hoverTile / MAP_SIZE;
+    preview->rotation = ui->buildRotation;
+    preview->complete = 1;
+    return ui->movingBuilding
+               ? GameCanTransformBuildingFor(ui->g, 0, ui->editBuilding, preview->x, preview->y,
+                                             preview->rotation, reason, size)
+               : GameCanPlaceRotatedFor(ui->g, 0, preview->type, preview->x, preview->y,
+                                        preview->rotation, reason, size);
+}
+
 bool ViewCommand(ViewContext *ui, int type, int a, int b, int c)
 {
     char reason[256];
@@ -63,6 +124,7 @@ bool ViewSave(ViewContext *ui)
 
 bool ViewLoad(ViewContext *ui, const char *path)
 {
+    ViewCancelBuildingEdit(ui);
     ViewCancelDrag(ui);
     char why[256];
     bool ok = GameLoad(ui->g, path, why, sizeof(why));
@@ -114,6 +176,7 @@ void ViewSelectIdle(ViewContext *ui)
         ViewToast(ui, "No idle workers right now.");
         return;
     }
+    ViewCancelBuildingEdit(ui);
     ui->selectionCount = 0;
     for (int i = 0; i < ui->g->citizenCount; i++)
     {
@@ -180,6 +243,7 @@ void ViewResumeConstruction(ViewContext *ui)
 
 void ViewSelectBuilding(ViewContext *ui, int id)
 {
+    ViewCancelBuildingEdit(ui);
     ui->selectionCount = 0;
     ui->selectedCitizen = -1;
     ui->selected = id;
@@ -205,6 +269,7 @@ void ViewHoldSelected(ViewContext *ui)
 
 void ViewTogglePanel(ViewContext *ui, int panel)
 {
+    ViewCancelBuildingEdit(ui);
     ui->panel = ui->panel == panel ? -1 : panel;
     ViewCancelDrag(ui);
     ui->buildMenu = false;
@@ -214,6 +279,7 @@ void ViewTogglePanel(ViewContext *ui, int panel)
 
 void ViewBuildToggle(ViewContext *ui)
 {
+    ViewCancelBuildingEdit(ui);
     if (!ViewSelectedWorkers(ui))
     {
         ViewToast(ui, "Select a worker to open construction.");

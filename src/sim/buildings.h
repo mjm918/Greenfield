@@ -4,7 +4,8 @@
 
 int BuildingsAdd(GameState *g, int owner, int type, int x, int y, bool done);
 bool BuildingsNearby(const GameState *g, int owner, int type, int x, int y, int range);
-bool BuildingsPlace(GameState *g, int owner, int type, int x, int y, char *reason, int size);
+bool BuildingsPlace(GameState *g, int owner, int type, int x, int y, int rotation, char *reason, int size);
+bool BuildingsEdit(GameState *g, GameCommand cmd, char *reason, int size);
 bool BuildingsUpgrade(GameState *g, int owner, int id, char *reason, int size);
 void BuildingsWork(GameState *g, Citizen *c);
 void BuildingsDestroy(GameState *g, int id);

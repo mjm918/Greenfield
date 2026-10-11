@@ -71,7 +71,12 @@ bool GameCommandApply(GameState *g, GameCommand cmd, char *r, int n)
     switch (cmd.type)
     {
     case CMD_BUILD:
-        ok = BuildingsPlace(g, cmd.owner, cmd.a, cmd.b, cmd.c, r, n);
+        ok = BuildingsPlace(g, cmd.owner, cmd.a, cmd.b, cmd.c, cmd.rotation, r, n);
+        break;
+    case CMD_MOVE_BUILDING:
+    case CMD_ROTATE_BUILDING:
+    case CMD_DEMOLISH:
+        ok = BuildingsEdit(g, cmd, r, n);
         break;
     case CMD_ASSIGN:
         ok = CitizensAssign(g, cmd.owner, cmd.a, cmd.b, r, n);

@@ -15,7 +15,7 @@
 #define TICKS_SECOND 10
 #define DAY_TICKS 1800
 #define WINTER_END 7200
-#define SAVE_VERSION 3
+#define SAVE_VERSION 4
 
 typedef enum
 {
@@ -168,7 +168,10 @@ typedef enum
     CMD_TREATY,
     CMD_EQUIP,
     CMD_STOP,
-    CMD_ROLE
+    CMD_ROLE,
+    CMD_MOVE_BUILDING,
+    CMD_ROTATE_BUILDING,
+    CMD_DEMOLISH
 } CommandType;
 typedef struct
 {
@@ -212,6 +215,7 @@ typedef struct
     int alive, owner, generation, type, x, y, hp, progress, complete, upgraded, crop, cropProgress, priority;
     int started, reserve[RESOURCE_COUNT], queueCount;
     Production queue[MAX_QUEUE];
+    int rotation; // 0: along the grid X axis; 1: along Y (mirrored isometric view).
 } Building;
 typedef struct
 {
@@ -261,6 +265,7 @@ typedef struct
     EntityRef entity;
     UnitOrder order;
     int append;
+    int rotation;
 } GameCommand;
 typedef struct
 {
@@ -313,6 +318,12 @@ bool GameCanAdvance(const GameState *g, int owner, char *reason, int size);
 bool GameCanTreaty(const GameState *g, char *reason, int size);
 int GameTruceCost(const GameState *g);
 int GameBuildingMaxHealth(const GameState *g, const Building *b);
+int GameBuildingWidth(const Building *b);
+int GameBuildingHeight(const Building *b);
+bool GameCanPlaceRotatedFor(const GameState *g, int owner, int type, int x, int y, int rotation,
+                            char *reason, int size);
+bool GameCanTransformBuildingFor(const GameState *g, int owner, EntityRef ref, int x, int y,
+                                int rotation, char *reason, int size);
 EntityRef GameCitizenRef(const GameState *g, int id);
 EntityRef GameBuildingRef(const GameState *g, int id);
 bool GameCitizenValid(const GameState *g, EntityRef ref);

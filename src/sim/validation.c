@@ -89,17 +89,17 @@ bool GameValidate(const GameState *g, char *r, int n)
     {
         const Building *b = &g->buildings[i];
         if (!Flag(b->alive) || b->owner < 0 || b->owner >= 2 || b->generation <= 0 || b->type < 0 ||
-            b->type >= BUILDING_COUNT || b->x < 0 || b->y < 0 || b->x + BUILDINGS[b->type].w > MAP_SIZE ||
-            b->y + BUILDINGS[b->type].h > MAP_SIZE || b->hp < 0 || b->hp > GameBuildingMaxHealth(g, b) ||
+            b->type >= BUILDING_COUNT || b->x < 0 || b->y < 0 || b->x + GameBuildingWidth(b) > MAP_SIZE ||
+            b->y + GameBuildingHeight(b) > MAP_SIZE || b->hp < 0 || b->hp > GameBuildingMaxHealth(g, b) ||
             b->progress < 0 || b->progress > BUILDINGS[b->type].labor || !Flag(b->complete) ||
-            !Flag(b->started) || b->upgraded < 0 || b->upgraded > 3 || b->crop < 0 || b->crop > 2 ||
-            b->cropProgress < 0 || b->cropProgress > 2400 || b->queueCount < 0 || b->queueCount > MAX_QUEUE)
+            !Flag(b->rotation) || !Flag(b->started) || b->upgraded < 0 || b->upgraded > 3 || b->crop < 0 ||
+            b->crop > 2 || b->cropProgress < 0 || b->cropProgress > 2400 || b->queueCount < 0 || b->queueCount > MAX_QUEUE)
             return Reject(r, n, "Invalid building.");
         if ((!b->alive && b->queueCount) || b->priority < 0 || b->priority > 2)
             return Reject(r, n, "Invalid building lifecycle.");
         if (b->alive)
-            for (int y = b->y; y < b->y + BUILDINGS[b->type].h; y++)
-                for (int x = b->x; x < b->x + BUILDINGS[b->type].w; x++)
+            for (int y = b->y; y < b->y + GameBuildingHeight(b); y++)
+                for (int x = b->x; x < b->x + GameBuildingWidth(b); x++)
                     if (g->tiles[GameTile(x, y)].occupied != i)
                         return Reject(r, n, "Building occupancy mismatch.");
         for (int k = 0; k < RESOURCE_COUNT; k++)
@@ -153,8 +153,8 @@ bool GameValidate(const GameState *g, char *r, int n)
         if (t->occupied >= 0)
         {
             const Building *b = &g->buildings[t->occupied];
-            if (!b->alive || i % MAP_SIZE < b->x || i % MAP_SIZE >= b->x + BUILDINGS[b->type].w ||
-                i / MAP_SIZE < b->y || i / MAP_SIZE >= b->y + BUILDINGS[b->type].h)
+            if (!b->alive || i % MAP_SIZE < b->x || i % MAP_SIZE >= b->x + GameBuildingWidth(b) ||
+                i / MAP_SIZE < b->y || i / MAP_SIZE >= b->y + GameBuildingHeight(b))
                 return Reject(r, n, "Invalid occupied tile.");
         }
     }

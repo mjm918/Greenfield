@@ -137,9 +137,8 @@ void ProductionUpdate(GameState *g)
                     WorldRoute(g, c, dest);
                 continue;
             }
-            const BuildingDef *def = &BUILDINGS[b->type];
-            int dx = Max(0, Max(b->x - c->x / 256, c->x / 256 - (b->x + def->w - 1)));
-            int dy = Max(0, Max(b->y - c->y / 256, c->y / 256 - (b->y + def->h - 1)));
+            int dx = Max(0, Max(b->x - c->x / 256, c->x / 256 - (b->x + GameBuildingWidth(b) - 1)));
+            int dy = Max(0, Max(b->y - c->y / 256, c->y / 256 - (b->y + GameBuildingHeight(b) - 1)));
             // WorldAdjacent includes the corners of the footprint. Every tile
             // it chooses must be a valid arrival, or the head of the queue stalls.
             if (dx > 1 || dy > 1)
@@ -148,7 +147,7 @@ void ProductionUpdate(GameState *g)
                     WorldMoveCitizen(g, c);
                 else
                     WorldRoute(g, c,
-                               WorldAdjacent(g, c->owner, b->x, b->y, def->w, def->h,
+                               WorldAdjacent(g, c->owner, b->x, b->y, GameBuildingWidth(b), GameBuildingHeight(b),
                                              GameTile(c->x / 256, c->y / 256)));
                 continue;
             }

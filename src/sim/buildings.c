@@ -5,6 +5,24 @@
 #include "production.h"
 #include "progression.h"
 
+int GameBuildingWidth(const Building *b)
+{
+    return b->rotation ? BUILDINGS[b->type].h : BUILDINGS[b->type].w;
+}
+
+int GameBuildingHeight(const Building *b)
+{
+    return b->rotation ? BUILDINGS[b->type].w : BUILDINGS[b->type].h;
+}
+
+static void Occupy(GameState *g, int id)
+{
+    const Building *b = &g->buildings[id];
+    for (int y = b->y; y < b->y + GameBuildingHeight(b); y++)
+        for (int x = b->x; x < b->x + GameBuildingWidth(b); x++)
+            g->tiles[GameTile(x, y)].occupied = id;
+}
+
 int GameBuildingMaxHealth(const GameState *g, const Building *b)
 {
     return g->factions[b->owner].discovery[STONEWORK] ? 4500 : 3000;
@@ -29,7 +47,7 @@ int GameBuildingCountFor(const GameState *g, int owner, int type, bool completeO
     return n;
 }
 
-int BuildingsAdd(GameState *g, int owner, int type, int x, int y, bool done)
+static int Add(GameState *g, int owner, int type, int x, int y, int rotation, bool done)
 {
     int id = 0;
     while (id < g->buildingCount && g->buildings[id].alive)
@@ -46,17 +64,21 @@ int BuildingsAdd(GameState *g, int owner, int type, int x, int y, bool done)
                     .hp = 3000,
                     .started = done,
                     .type = type,
+                    .rotation = rotation,
                     .x = x,
                     .y = y,
                     .progress = done ? BUILDINGS[type].labor : 0,
                     .complete = done,
                     .priority = 1};
     b->hp = GameBuildingMaxHealth(g, b);
-    for (int yy = y; yy < y + BUILDINGS[type].h; yy++)
-        for (int xx = x; xx < x + BUILDINGS[type].w; xx++)
-            g->tiles[GameTile(xx, yy)].occupied = id;
+    Occupy(g, id);
     g->mapRevision++;
     return id;
+}
+
+int BuildingsAdd(GameState *g, int owner, int type, int x, int y, bool done)
+{
+    return Add(g, owner, type, x, y, 0, done);
 }
 
 bool BuildingsNearby(const GameState *g, int owner, int type, int x, int y, int range)
@@ -92,7 +114,39 @@ bool GameBuildingUnlockedFor(const GameState *g, int owner, int type, char *reas
     return true;
 }
 
-bool GameCanPlaceFor(const GameState *g, int owner, int type, int x, int y, char *reason, int size)
+// Shared terrain/occupancy validation for both new sites and existing structures.
+static bool CanOccupy(const GameState *g, const Building *b, int ignore, char *reason, int size)
+{
+    int w = GameBuildingWidth(b), h = GameBuildingHeight(b);
+    if (b->rotation < 0 || b->rotation > 1)
+        return Reject(reason, size, "Choose one of the two building orientations.");
+    if (b->x < 0 || b->y < 0 || b->x > MAP_SIZE - w || b->y > MAP_SIZE - h)
+        return Reject(reason, size, "Keep the whole footprint inside the valley.");
+    for (int y = b->y; y < b->y + h; y++)
+        for (int x = b->x; x < b->x + w; x++)
+        {
+            const Tile *t = &g->tiles[GameTile(x, y)];
+            if (t->terrain == WATER || t->terrain == SHALLOWS)
+                return Reject(reason, size, "Water and river crossings must stay clear.");
+            if (t->occupied >= 0 && t->occupied != ignore)
+                return Reject(reason, size, "Another building occupies this footprint.");
+            if (t->node != NODE_NONE)
+                return Reject(reason, size, "Gather the natural resources on this tile first.");
+            if (b->type == FARM && t->terrain != FERTILE)
+                return Reject(reason, size, "Farm plots need the fertile soil beside the river.");
+            // Existing occupants are safe on retained footprint tiles. Do not
+            // trap anyone by moving/expanding a solid structure onto a new tile.
+            if (ignore >= 0 && t->occupied == ignore)
+                continue;
+            for (int i = 0; i < g->citizenCount; i++)
+                if (g->citizens[i].alive && g->citizens[i].x / 256 == x && g->citizens[i].y / 256 == y)
+                    return Reject(reason, size, "A citizen is standing here. Wait until they move.");
+        }
+    return true;
+}
+
+bool GameCanPlaceRotatedFor(const GameState *g, int owner, int type, int x, int y, int rotation,
+                            char *reason, int size)
 {
     if (!GameBuildingUnlockedFor(g, owner, type, reason, size))
         return false;
@@ -101,44 +155,101 @@ bool GameCanPlaceFor(const GameState *g, int owner, int type, int x, int y, char
         slots += g->buildings[i].alive;
     if (slots >= MAX_BUILDINGS)
         return Reject(reason, size, "The valley's building limit is reached.");
-    const BuildingDef *d = &BUILDINGS[type];
-    if (x < 0 || y < 0 || x > MAP_SIZE - d->w || y > MAP_SIZE - d->h)
-        return Reject(reason, size, "Keep the whole footprint inside the valley.");
-    for (int yy = y; yy < y + d->h; yy++)
-        for (int xx = x; xx < x + d->w; xx++)
-        {
-            int t = GameTile(xx, yy);
-            if (t < 0)
-                return Reject(reason, size, "Keep the whole footprint inside the valley.");
-            if (g->tiles[t].terrain == WATER || g->tiles[t].terrain == SHALLOWS)
-                return Reject(reason, size, "Water and river crossings must stay clear.");
-            if (g->tiles[t].occupied >= 0)
-                return Reject(reason, size, "Another building occupies this footprint.");
-            if (g->tiles[t].node != NODE_NONE)
-                return Reject(reason, size, "Gather the natural resources on this tile first.");
-            if (type == FARM && g->tiles[t].terrain != FERTILE)
-                return Reject(reason, size, "Farm plots need the fertile soil beside the river.");
-            for (int i = 0; i < g->citizenCount; i++)
-                if (g->citizens[i].alive && g->citizens[i].x / 256 == xx && g->citizens[i].y / 256 == yy)
-                    return Reject(reason, size, "A citizen is standing here. Wait until they move.");
-        }
-    if (!GameCanAffordFor(g, owner, d->cost))
+    Building candidate = {.type = type, .x = x, .y = y, .rotation = rotation};
+    if (!CanOccupy(g, &candidate, -1, reason, size))
+        return false;
+    if (!GameCanAffordFor(g, owner, BUILDINGS[type].cost))
         return Reject(reason, size, "Not enough stored materials. Carried goods must be delivered first.");
     if (reason && size > 0)
-        snprintf(reason, (size_t)size, "Click to place %s", d->name);
+        snprintf(reason, (size_t)size, "Click to place %s", BUILDINGS[type].name);
     return true;
 }
 
-bool BuildingsPlace(GameState *g, int owner, int type, int x, int y, char *reason, int size)
+bool GameCanPlaceFor(const GameState *g, int owner, int type, int x, int y, char *reason, int size)
 {
-    if (!GameCanPlaceFor(g, owner, type, x, y, reason, size))
+    return GameCanPlaceRotatedFor(g, owner, type, x, y, 0, reason, size);
+}
+
+bool BuildingsPlace(GameState *g, int owner, int type, int x, int y, int rotation, char *reason, int size)
+{
+    if (!GameCanPlaceRotatedFor(g, owner, type, x, y, rotation, reason, size))
         return false;
-    int id = BuildingsAdd(g, owner, type, x, y, false);
+    int id = Add(g, owner, type, x, y, rotation, false);
     EconomyReserve(g, owner, BUILDINGS[type].cost, g->buildings[id].reserve);
     if (type == HEARTH && g->factions[owner].center < 0)
     {
         g->factions[owner].center = id;
         g->buildings[id].upgraded = g->factions[owner].age;
+    }
+    return true;
+}
+
+bool GameCanTransformBuildingFor(const GameState *g, int owner, EntityRef ref, int x, int y,
+                                int rotation, char *reason, int size)
+{
+    if (owner < 0 || owner >= FACTION_COUNT || !GameBuildingValid(g, ref) ||
+        g->buildings[ref.slot].owner != owner)
+        return Reject(reason, size, "Select an existing building in your settlement.");
+    Building candidate = g->buildings[ref.slot];
+    candidate.x = x;
+    candidate.y = y;
+    candidate.rotation = rotation;
+    if (!CanOccupy(g, &candidate, ref.slot, reason, size))
+        return false;
+    if (reason && size > 0)
+        snprintf(reason, (size_t)size, "Click to move %s. Progress and queues are kept.",
+                 BUILDINGS[candidate.type].name);
+    return true;
+}
+
+bool BuildingsEdit(GameState *g, GameCommand cmd, char *reason, int size)
+{
+    if (!GameBuildingValid(g, cmd.entity) || g->buildings[cmd.entity.slot].owner != cmd.owner)
+        return Reject(reason, size, "Select an existing building in your settlement.");
+    Building *b = &g->buildings[cmd.entity.slot];
+    if (cmd.type == CMD_DEMOLISH)
+    {
+        BuildingsDestroy(g, cmd.entity.slot);
+        return true;
+    }
+    int x = cmd.type == CMD_ROTATE_BUILDING ? b->x : cmd.a;
+    int y = cmd.type == CMD_ROTATE_BUILDING ? b->y : cmd.b;
+    int rotation = cmd.type == CMD_ROTATE_BUILDING ? 1 - b->rotation : cmd.rotation;
+    if (!GameCanTransformBuildingFor(g, cmd.owner, cmd.entity, x, y, rotation, reason, size))
+        return false;
+    if (x == b->x && y == b->y && rotation == b->rotation)
+        return true;
+    for (int t = 0; t < TILE_COUNT; t++)
+        if (g->tiles[t].occupied == cmd.entity.slot)
+            g->tiles[t].occupied = -1;
+    b->x = x;
+    b->y = y;
+    b->rotation = rotation;
+    Occupy(g, cmd.entity.slot);
+    // Handles, work, cargo, recipes and queues are retained. Jobs and trainees
+    // resolve their destination from the live building after route invalidation.
+    g->mapRevision++;
+    for (int i = 0; i < g->citizenCount; i++)
+    {
+        Citizen *c = &g->citizens[i];
+        for (int q = 0; q < c->orderCount; q++)
+            if (c->orders[q].targetKind == TARGET_BUILDING &&
+                c->orders[q].target.slot == cmd.entity.slot &&
+                c->orders[q].target.generation == cmd.entity.generation)
+            {
+                c->orders[q].x = x;
+                c->orders[q].y = y;
+            }
+    }
+    for (int o = 0; o < FACTION_COUNT; o++)
+    {
+        Faction *f = &g->factions[o];
+        if (f->rallyOrder.targetKind == TARGET_BUILDING && f->rallyOrder.target.slot == cmd.entity.slot &&
+            f->rallyOrder.target.generation == cmd.entity.generation)
+        {
+            f->rallyOrder.x = f->rallyX = x;
+            f->rallyOrder.y = f->rallyY = y;
+        }
     }
     return true;
 }

@@ -108,7 +108,7 @@ void CombatUpdate(GameState *g)
         }
         int range = UNITS[c->unitType].range;
         int x = enemy ? enemy->x / 256 : building->x, y = enemy ? enemy->y / 256 : building->y;
-        int w = building ? BUILDINGS[building->type].w : 1, h = building ? BUILDINGS[building->type].h : 1;
+        int w = building ? GameBuildingWidth(building) : 1, h = building ? GameBuildingHeight(building) : 1;
         int dx = Max(0, Max(x - c->x / 256, c->x / 256 - (x + w - 1))),
             dy = Max(0, Max(y - c->y / 256, c->y / 256 - (y + h - 1)));
         c->job = JOB_FIGHT;

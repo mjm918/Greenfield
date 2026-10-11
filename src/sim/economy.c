@@ -91,7 +91,7 @@ int EconomyDeliveryTile(GameState *g, Citizen *c)
         int dd = Dist(b->x, b->y, c->x / 256, c->y / 256);
         if (dd >= d)
             continue;
-        int t = WorldAdjacent(g, c->owner, b->x, b->y, BUILDINGS[b->type].w, BUILDINGS[b->type].h, from);
+        int t = WorldAdjacent(g, c->owner, b->x, b->y, GameBuildingWidth(b), GameBuildingHeight(b), from);
         if (t >= 0)
         {
             best = t;

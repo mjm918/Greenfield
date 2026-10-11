@@ -33,7 +33,7 @@ static int Destination(GameState *g, Citizen *c)
     if (c->target >= 0 && c->target < g->buildingCount)
     {
         Building *b = &g->buildings[c->target];
-        return WorldAdjacent(g, c->owner, b->x, b->y, BUILDINGS[b->type].w, BUILDINGS[b->type].h, from);
+        return WorldAdjacent(g, c->owner, b->x, b->y, GameBuildingWidth(b), GameBuildingHeight(b), from);
     }
     return -1;
 }
@@ -83,7 +83,7 @@ static void ChooseJob(GameState *g, Citizen *c)
                 continue;
             int d = Dist(c->x / 256, c->y / 256, b->x, b->y);
             if (d >= score ||
-                WorldAdjacent(g, c->owner, b->x, b->y, BUILDINGS[b->type].w, BUILDINGS[b->type].h, from) < 0)
+                WorldAdjacent(g, c->owner, b->x, b->y, GameBuildingWidth(b), GameBuildingHeight(b), from) < 0)
                 continue;
             best = i;
             score = d;
@@ -204,8 +204,8 @@ static void CitizenWork(GameState *g, Citizen *c)
     else if (c->target >= 0 && c->target < g->buildingCount)
     {
         Building *b = &g->buildings[c->target];
-        c->facing = GameFacing(b->x * 256 + (BUILDINGS[b->type].w - 1) * 128 - c->x,
-                               b->y * 256 + (BUILDINGS[b->type].h - 1) * 128 - c->y, c->facing);
+        c->facing = GameFacing(b->x * 256 + (GameBuildingWidth(b) - 1) * 128 - c->x,
+                               b->y * 256 + (GameBuildingHeight(b) - 1) * 128 - c->y, c->facing);
     }
     if (c->job == JOB_REPAIR)
     {

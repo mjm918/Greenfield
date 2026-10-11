@@ -39,17 +39,8 @@ static int BuildingAt(ViewContext *ui)
         Building *b = &ui->g->buildings[i];
         if (!b->alive || b->type == FARM)
             continue;
-        int index;
-        float width;
-        Atlas atlas;
-        Vector2 foot = ViewBuildingVisual(ui, b, &atlas, &index, &width);
-        Rectangle src = atlas.rect[index];
-        if (src.width <= 0)
-            continue;
-        float height = width * src.height / src.width;
         float d = b->x + b->y;
-        if (d >= depth &&
-            CheckCollisionPointRec(mouse, (Rectangle){foot.x - width / 2, foot.y - height, width, height}))
+        if (d >= depth && CheckCollisionPointRec(mouse, ViewBuildingBounds(ui, b)))
         {
             best = i;
             depth = d;
@@ -143,6 +134,10 @@ void ViewInput(ViewContext *ui, float dt)
     if (ui->selected >= 0 && (!g->buildings[ui->selected].alive ||
                               g->buildings[ui->selected].generation != ui->selectedGeneration))
         ui->selected = -1;
+    if ((ui->movingBuilding || ui->confirmDemolish) &&
+        (!GameBuildingValid(g, ui->editBuilding) || ui->selectionCount ||
+         ui->selected != ui->editBuilding.slot || ui->selectedGeneration != ui->editBuilding.generation))
+        ViewCancelBuildingEdit(ui);
     ui->selectedCitizen = ui->selectionCount ? ui->selection[0].slot : -1;
     if (IsKeyPressed(KEY_ESCAPE))
     {
@@ -153,6 +148,8 @@ void ViewInput(ViewContext *ui, float dt)
             ui->menu = false;
             ui->confirmNew = false;
         }
+        else if (ui->movingBuilding || ui->confirmDemolish)
+            ViewCancelBuildingEdit(ui);
         else if (ui->build >= 0 || ui->orderMode)
         {
             ui->build = -1;
@@ -172,6 +169,7 @@ void ViewInput(ViewContext *ui, float dt)
     if (ui->menu || ui->help || g->lost || (!ui->winSeen && g->won))
     {
         ViewCancelDrag(ui);
+        ViewCancelBuildingEdit(ui);
         return;
     }
     if (IsKeyPressed(KEY_SPACE))
@@ -231,6 +229,7 @@ void ViewInput(ViewContext *ui, float dt)
                 for (int i = 0; i < ui->groupCount[k]; i++)
                     if (GameCitizenValid(g, ui->groups[k][i]))
                         ui->selection[ui->selectionCount++] = ui->groups[k][i];
+                ViewCancelBuildingEdit(ui);
                 ui->selected = -1;
                 ui->panel = -1;
                 ui->buildMenu = false;
@@ -241,6 +240,10 @@ void ViewInput(ViewContext *ui, float dt)
         }
     if (IsKeyPressed(KEY_B))
         ViewBuildToggle(ui);
+    if (IsKeyPressed(KEY_Q) && !ui->confirmDemolish &&
+        (ui->build >= 0 || ui->movingBuilding ||
+         (!ui->selectionCount && ui->selected >= 0 && !g->buildings[ui->selected].owner)))
+        ViewRotateBuilding(ui);
     if (IsKeyPressed(KEY_G))
         ui->grid = !ui->grid;
     if (IsKeyPressed(KEY_A) && ui->selectionCount)
@@ -309,6 +312,11 @@ void ViewInput(ViewContext *ui, float dt)
     }
     if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) && ViewWorldHit(ui) && ui->hoverTile >= 0)
     {
+        if (ui->movingBuilding || ui->confirmDemolish)
+        {
+            ViewCancelBuildingEdit(ui);
+            return;
+        }
         if (ui->build >= 0 || ui->orderMode)
         {
             ui->build = -1;
@@ -331,9 +339,30 @@ void ViewInput(ViewContext *ui, float dt)
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && ViewWorldHit(ui) && ui->hoverTile >= 0)
     {
         int x = ui->hoverTile % MAP_SIZE, y = ui->hoverTile / MAP_SIZE;
+        if (ui->movingBuilding)
+        {
+            char why[256];
+            bool ok = GameCommandApply(g,
+                                      (GameCommand){.type = CMD_MOVE_BUILDING,
+                                                    .entity = ui->editBuilding,
+                                                    .a = x, .b = y, .rotation = ui->buildRotation},
+                                      why, sizeof(why));
+            ViewToast(ui, ok ? "Building moved. Health, progress and queues preserved." : why);
+            if (ok)
+                ViewCancelBuildingEdit(ui);
+            return;
+        }
+        if (ui->confirmDemolish)
+            ViewCancelBuildingEdit(ui);
         if (ui->build >= 0)
         {
-            if (ViewCommand(ui, CMD_BUILD, ui->build, x, y))
+            char why[256];
+            bool ok = GameCommandApply(g,
+                                      (GameCommand){.type = CMD_BUILD, .a = ui->build, .b = x, .c = y,
+                                                    .rotation = ui->buildRotation}, why, sizeof(why));
+            if (!ok)
+                ViewToast(ui, why);
+            if (ok)
             {
                 int id = g->tiles[ui->hoverTile].occupied;
                 ViewIssueSelected(ui, CMD_ORDER, 0,

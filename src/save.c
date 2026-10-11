@@ -250,6 +250,10 @@ static void State(Wire *w, GameState *g, uint32_t version)
             U32(w, &a->random);
         }
     }
+    // Append-only v4: older country saves default to the original orientation.
+    if (version >= 4)
+        for (int i = 0; i < MAX_BUILDINGS; i++)
+            Int(w, &g->buildings[i].rotation);
 }
 static uint64_t Digest(const unsigned char *p, size_t n)
 {
@@ -365,7 +369,7 @@ bool GameLoad(GameState *g, const char *path, char *reason, int size)
     U32(&w, &version);
     U32(&w, &length);
     U64(&w, &hash);
-    bool ok = memcmp(magic, "GFTRIBE", 8) == 0 && (version == 2 || version == SAVE_VERSION) &&
+    bool ok = memcmp(magic, "GFTRIBE", 8) == 0 && (version >= 2 && version <= SAVE_VERSION) &&
               length == n - 24 && hash == Digest(data + 24, n - 24);
     if (ok)
     {

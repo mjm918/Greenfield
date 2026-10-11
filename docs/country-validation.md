@@ -1,7 +1,7 @@
 # Country expansion validation
 
 Local macOS validation, 2026-10-11. Implementation is based on refactor commit
-`a7b4253`. These results cover the country expansion, compact HUD and the facing/wildlife fix based on `6a7988c`. The current codec is version 3; the country gameplay rules remain unchanged.
+`a7b4253`. These results cover the country expansion, compact HUD and the facing/wildlife fix based on `6a7988c`. The facing/wildlife results below used codec version 3. The building-edit follow-up at the end records current version-4 evidence.
 
 ## Automated acceptance
 
@@ -261,3 +261,15 @@ retry, depleted targets, metallurgy rejection, right-click picking, paused
 acknowledgement, Shift queueing and cancellation. Inspected macOS GPU captures
 `build/evidence/gather-target.png` and `gather-confirmed.png`. These remain controlled
 tests; the running player session has not been restarted or changed.
+
+## Building move, rotation, and demolition follow-up
+
+Implemented against `71c2d38`, 2026-10-11. Release CTest passed **11/11** (34.30 seconds): the new building-edit suite, simulation, wildlife, both country campaigns, population capacity, input, rendered HUD, gameplay capture, reference fidelity, and pixel-art checks. Counts: **98 building assertions**, **453 simulation assertions**, **56 wildlife/compatibility assertions**, **113 headless view assertions**, and **248 rendered view assertions** (including repeated/shared checks).
+
+AddressSanitizer/UndefinedBehaviorSanitizer passed the building-edit, simulation, wildlife, and headless input suites (**4/4**, 4.62 seconds). Builds reported no compiler warnings. These are local automated checks; the player's running village was not restarted or modified for testing.
+
+Coverage includes both factions, rotated rectangular placement at the map edge, rejection without mutation, unchanged generation handles, stale handles after slot reuse, resource conservation, continued construction/research/training at the new site, preserved production progress, demolition losses and cleanup, friendly/enemy routing through both gate orientations, version-2/3 loading, and version-4 round-trip/deterministic continuation. Invalid orientation cannot overwrite the previous valid save.
+
+Rendered production-input checks cover Q rotation, Shift repeat, blocked and successful moves, compact contextual actions, explicit demolition confirmation, cancellation, stale previews, and sprite picking. Inspected captures in `build/evidence/`: `build-rotated-preview.png`, `building-move-preview.png`, `building-edit-controls.png`, `building-demolish-confirm.png`, and `wall-gate-alignment.png`. The last capture shows connected straight palisade/gate runs on both grid axes. Orientation is a two-view axis switch using the existing art.
+
+Both campaigns still reach the village at **53:10** and country at **124:25**, including their original shortage/raid recovery assertions. All 26 expected hashes were derived by appending 2,048 zero orientation bytes to the prior version-3 hash stream, and both campaigns match them. The expected historical gameplay was not re-recorded from new outputs. Existing player saves remain untouched; version 4 adds only 2,048 bytes to ordinary saves, with no new assets, dependencies, network activity, or background work.

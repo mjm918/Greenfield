@@ -27,6 +27,7 @@ void ViewMenu(ViewContext *ui)
             ui->selectionCount = 0;
             ui->orderMode = 0;
             ViewCancelDrag(ui);
+            ViewCancelBuildingEdit(ui);
             for (int i = 0; i < 10; i++)
                 ui->groupCount[i] = 0;
             ui->menu = false;
@@ -116,7 +117,7 @@ void ViewGuide(ViewContext *ui)
              290, 693, 16, MUTED);
     ViewText(ui, "Drag empty ground / middle drag / arrows pan   Wheel zoom   Home recenter   M whole valley",
              290, 720, 16, MUTED);
-    ViewText(ui, "F5 save   F9 load   Esc menu or cancel   F fullscreen", 290, 747, 16, MUTED);
+    ViewText(ui, "Q rotate   F5 save   F9 load   Esc cancel   F fullscreen", 290, 747, 16, MUTED);
     if (ViewButton(ui, (Rectangle){974, 740, 173, 41}, "Back to the valley", true, true))
         ui->help = false;
 }
@@ -151,6 +152,7 @@ void ViewEnding(ViewContext *ui)
             ui->selectionCount = 0;
             ui->orderMode = 0;
             ViewCancelDrag(ui);
+            ViewCancelBuildingEdit(ui);
             for (int i = 0; i < 10; i++)
                 ui->groupCount[i] = 0;
             ui->speed = 1;

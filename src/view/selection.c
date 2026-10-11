@@ -145,6 +145,61 @@ static void BuildingCommands(ViewContext *ui, Building *b)
     float y = ViewSelectionRect(ui).y;
     if (b->owner)
         return;
+    if (ui->confirmDemolish)
+    {
+        if (Action(ui, 0, "Confirm demolish", true,
+                   "Permanently remove this structure. No salvage; reserved materials and queues are lost.",
+                   NULL))
+        {
+            if (Command(ui, (GameCommand){.type = CMD_DEMOLISH, .entity = ui->editBuilding}))
+            {
+                ViewToast(ui, "Building demolished. Its footprint is now clear.");
+                ViewSelectBuilding(ui, -1);
+            }
+            return;
+        }
+        if (Action(ui, 1, "Keep building", true, "Cancel demolition.", NULL))
+            ViewCancelBuildingEdit(ui);
+        ViewWrapText(ui, b->type == HEARTH
+                            ? "Removes your center and its projects. No materials returned."
+                            : b->type == SHELTER ? "Removes four beds. No materials returned."
+                                                : "No salvage. Reserved materials and queues are lost.",
+                     304, y + 55, 408, 16, ACCENT);
+        return;
+    }
+    if (ui->movingBuilding)
+    {
+        if (Action(ui, 0, "Rotate  Q", true, "Switch the preview between the two grid axes.", NULL))
+            ViewRotateBuilding(ui);
+        if (Action(ui, 1, "Cancel move", true, "Keep the building in its original position.", NULL))
+            ViewCancelBuildingEdit(ui);
+        char why[256] = "Click a new position. No cost; progress and queues are kept.";
+        if (ui->hoverTile >= 0 && ViewWorldHit(ui))
+        {
+            Building preview;
+            ViewBuildingPreview(ui, &preview, why, sizeof(why));
+        }
+        ViewWrapText(ui, why, 304, y + 54, 408, 16, PAPER);
+        return;
+    }
+    int editSlot = ViewBuildingEditSlot(b);
+    if (Action(ui, editSlot, "Move", true,
+               "Choose a new position. No material cost; health, construction and queues are kept.", NULL))
+    {
+        ViewMoveBuilding(ui);
+        return;
+    }
+    if (Action(ui, editSlot + 1, "Rotate  Q", true,
+               "Change the building's grid orientation. Its new footprint must be clear.", NULL))
+        ViewRotateBuilding(ui);
+    if (Action(ui, editSlot + 2, "Demolish", true,
+               "Remove this building after confirmation. No salvage; reserved materials and queues are lost.",
+               NULL))
+    {
+        ui->confirmDemolish = true;
+        ui->editBuilding = (EntityRef){ui->selected, ui->selectedGeneration};
+        return;
+    }
     if (!b->complete)
     {
         if (Action(ui, 0, "Resume building", true,
@@ -180,17 +235,6 @@ static void BuildingCommands(ViewContext *ui, Building *b)
             ui->orderMode = VIEW_ORDER_RALLY;
         if (Action(ui, 3, "Objectives  O", true, "View milestones and advancement requirements.", NULL))
             ViewTogglePanel(ui, 0);
-        if (f->advancing)
-        {
-            ViewText(ui, TextFormat("Upgrading: %d%%", f->advanceProgress * 100 / AGES[f->age + 1].labor),
-                     304, y + 56, 16, ACCENT);
-            ViewBar(304, y + 82, 564, (float)f->advanceProgress / AGES[f->age + 1].labor, ACCENT);
-        }
-        else
-            ViewText(ui,
-                     TextFormat("Food reserve %.1f days / %d of %d beds used", GameFoodDaysTenths(g) / 10.f,
-                                GamePopulation(g), GameHousing(g)),
-                     304, y + 62, 16, MUTED);
     }
     else if (b->type == WORKSHOP)
     {
@@ -200,11 +244,6 @@ static void BuildingCommands(ViewContext *ui, Building *b)
         if (Action(ui, 1, "Workforce  W", true,
                    "Select workers and assign crafters, or right-click this workshop.", NULL))
             ViewTogglePanel(ui, 1);
-        if (f->research >= 0)
-        {
-            ViewText(ui, DISCOVERIES[f->research].name, 304, y + 56, 16, ACCENT);
-            ViewBar(304, y + 82, 278, (float)f->researchProgress / DISCOVERIES[f->research].labor, ACCENT);
-        }
     }
     else if (b->type == SHELTER)
     {
@@ -308,6 +347,12 @@ void ViewSelectionDraw(ViewContext *ui)
         const char *status =
             b->owner       ? "Ashen tribe"
             : !b->complete ? TextFormat("Construction %d%%", b->progress * 100 / BUILDINGS[b->type].labor)
+            : b->type == HEARTH && g->factions[0].advancing
+                ? TextFormat("Advancing: %d%%", g->factions[0].advanceProgress * 100 /
+                                                   AGES[g->factions[0].age + 1].labor)
+            : b->type == WORKSHOP && g->factions[0].research >= 0
+                ? TextFormat("Research: %d%%", g->factions[0].researchProgress * 100 /
+                                                  DISCOVERIES[g->factions[0].research].labor)
             : b->type == TRAINING_GROUND ? "Select citizens to train"
             : b->type == FARM            ? (b->crop == 2   ? "Ready to harvest"
                                             : b->crop == 1 ? "Grain growing"

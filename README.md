@@ -67,6 +67,7 @@ A temporary truce costs the displayed food payment and lasts twelve minutes. A l
 | Minimap click / drag | Move the camera across the valley |
 | Home / M / minimap click | Founding camp / whole valley / recenter |
 | B / W / R / O | Worker construction palette / workforce / discoveries / objectives |
+| Q | Rotate a placement preview, move preview, or selected friendly building |
 | G / H / F | Grid / field guide / borderless fullscreen |
 | F5 / F9 / Escape | Save / load / cancel placement, close palette or ledger, then menu |
 
@@ -76,7 +77,7 @@ Workforce acts on the selected citizens. Counts reflect actual roles; there is n
 
 The new single slot is `~/Library/Application Support/Greenfield/country.gfv2` on macOS (`~/.greenfield/country.gfv2` elsewhere). Old `.gfv1` files remain untouched and are not migrated. Manual saves and two-minute simulation-time autosaves use the same slot. A new game does not overwrite it until saving occurs. Closing does not force a save.
 
-Version 3 reads existing country version-2 saves without overwriting them on load, and adds citizen facing and wildlife positions, behavior and RNG state. It keeps the same `country.gfv2` slot; version-1 village saves remain unsupported. The codec explicitly serializes both factions, generation handles, orders, routes, cargo, reservations, queues, discoveries, advancement, weather, AI decisions, combat and treaties. Validation precedes save; a temporary file is flushed and synced before atomic rename. Load validates a separate candidate before replacing the current game. Invalid/interrupted saves preserve the last usable slot. Failed loading pauses autosave until deliberate saving, successful loading or a new game.
+Version 4 reads existing country version-2 and version-3 saves without overwriting them on load. It adds building orientation to the version-3 citizen facing and wildlife state. It keeps the same `country.gfv2` slot; version-1 village saves remain unsupported. The codec explicitly serializes both factions, generation handles, orders, routes, cargo, reservations, queues, discoveries, advancement, weather, AI decisions, combat and treaties. Validation precedes save; a temporary file is flushed and synced before atomic rename. Load validates a separate candidate before replacing the current game. Invalid/interrupted saves preserve the last usable slot. Failed loading pauses autosave until deliberate saving, successful loading or a new game.
 
 ## Verification
 
@@ -89,7 +90,7 @@ cd build
 ./game_capacity_tests
 ```
 
-The campaign scripts use ordinary player commands, allow shortages and theft, and check timing, objectives and a mid-campaign save/load. The capacity test uses an explicitly constructed stress fixture, separate from campaign evidence. Version-3 checkpoints include the animation state while retaining the country gameplay expectations; historical version-1 fixtures remain for provenance, not acceptance.
+The campaign scripts use ordinary player commands, allow shortages and theft, and check timing, objectives and a mid-campaign save/load. The capacity test uses an explicitly constructed stress fixture, separate from campaign evidence. Version-4 checkpoints include animation and building orientation while retaining the country gameplay expectations; historical version-1 fixtures remain for provenance, not acceptance.
 
 ```sh
 build/bin/Greenfield.app/Contents/MacOS/Greenfield --game-capture build/evidence/winter.png
@@ -123,3 +124,15 @@ Select an unfinished structure and choose **Resume building** to assign its near
 **Idle workers** and the header counter use actual availability, including builders whose previous work is finished. Workers with queued orders, cargo, ongoing work or training are excluded. Selecting idle workers centers the camera on them; if there are none, the current selection stays and a message explains why.
 
 Left-drag empty ground to pan; the custom hand closes while dragging. Shift-drag selects groups, and dragging from a citizen still selects. Middle-drag and arrow keys remain available. The minimap also follows a held drag. The cursor is drawn with the existing UI palette; no additional assets, saved fields, filesystem operations or dependencies are required.
+
+### Move, rotate, and demolish buildings
+
+Press **Q** or click **Rotate** while placing a building to switch between its two isometric orientations. Rectangular footprints turn with the preview; **Shift** repeats placement in the chosen orientation. **R** still opens discoveries.
+
+Select one of your structures to use **Move**, **Rotate Q**, or **Demolish** in the bottom tray. Move keeps the original structure in place until you click a valid destination; **Esc**, right-click, or **Cancel move** leaves it unchanged. Moves and rotations cost no materials and preserve health, construction, crops, research, and queues. Workers and trainees find the new location. Occupied tiles, resources, water, and invalid farm soil are rejected before anything changes.
+
+Palisades and gates fit their one-tile footprints and meet along either grid axis. Orient adjacent segments along the same axis for a continuous line. Friendly citizens can pass through gates; enemy routes remain blocked. River crossings must stay clear.
+
+**Demolish** requires a second confirmation. It returns no materials and loses reserved construction materials, research, and production queues attached to that structure. Housing is removed immediately. Use **Cancel building** instead to refund an unfinished site's reserved materials. Moving and demolition also work on unfinished sites.
+
+Save version 4 appends 2,048 bytes for orientation, retaining the existing atomic save slot and frequency. Loading older country saves initializes their buildings to the original orientation. No assets, dependencies, or network operations were added.

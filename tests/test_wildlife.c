@@ -188,6 +188,29 @@ static void PersistenceTests(void)
     unsigned char *bytes = malloc(n);
     CHECK(fread(bytes, 1, n, f) == n);
     fclose(f);
+    // v3 includes animation but predates building orientation. Loading is read-only.
+    n -= 4 * MAX_BUILDINGS;
+    Put32(bytes + 8, 3);
+    Put32(bytes + 12, (uint32_t)n - 24);
+    uint64_t v3Digest = UINT64_C(14695981039346656037);
+    for (size_t i = 24; i < n; i++)
+        v3Digest = (v3Digest ^ bytes[i]) * UINT64_C(1099511628211);
+    Put32(bytes + 16, (uint32_t)v3Digest);
+    Put32(bytes + 20, (uint32_t)(v3Digest >> 32));
+    f = fopen("wildlife-v3.save", "wb");
+    CHECK(fwrite(bytes, 1, n, f) == n);
+    fclose(f);
+    CHECK(GameLoad(g, "wildlife-v3.save", why, sizeof(why)));
+    CHECK(GameHash(g) == GameHash(h));
+    for (int i = 0; i < g->buildingCount; i++)
+        CHECK(g->buildings[i].rotation == 0);
+    f = fopen("wildlife-v3.save", "rb");
+    unsigned char *unchanged = malloc(n);
+    CHECK(fread(unchanged, 1, n, f) == n && fgetc(f) == EOF);
+    CHECK(!memcmp(bytes, unchanged, n));
+    fclose(f);
+    free(unchanged);
+    remove("wildlife-v3.save");
     n -= 4 * (MAX_CITIZENS + 1 + MAX_WILDLIFE * 11);
     Put32(bytes + 8, 2);
     Put32(bytes + 12, (uint32_t)n - 24);

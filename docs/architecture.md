@@ -7,7 +7,7 @@ main.c -> game_view.c -> view/* -> game.h (queries and commands)
        -> reference.c / scene.fs
 
 game.c -> sim/* -> GameState (both factions and the shared valley)
-save.c -> GameValidate -> explicit version-3 wire format (also reads country v2)
+save.c -> GameValidate -> explicit version-4 wire format (also reads country v2/v3)
 ```
 
 `greenfield_sim` has no raylib dependency. Simulation uses integer ticks and the RNG in `GameState`, never rendering time, input, filesystem access or platform randomness. `game.c` orchestrates initialization, dispatch and the fixed 100 ms tick. `save.c` alone owns persistence. The UI and rival AI both submit `GameCommandApply` commands.
@@ -101,7 +101,7 @@ Input uses logical 1440 × 900 coordinates. Below the 48px header, the world ren
 
 ## Persistence and compatibility
 
-Save version 3 keeps the existing `country.gfv2` slot. Country version-2 files load their unchanged payload and initialize facing/wildlife in memory; loading does not write the file. The next ordinary save writes version 3. Historical village version-1 files remain unsupported and untouched. All persistent fields have explicit little-endian serialization; no pointers or raw C struct dumps. The serializer also supplies the full-state hash. Validate, write temporary file, flush/sync, atomic rename. Loading validates a separate candidate and commits it only on success. Failed loading blocks autosave until a deliberate recovery action.
+Save version 4 keeps the existing `country.gfv2` slot. Country version-2 files initialize facing/wildlife; country version-2/3 files initialize building orientation to zero. Loading does not write the file. The next ordinary save writes version 4. Historical village version-1 files remain unsupported and untouched. All persistent fields have explicit little-endian serialization; no pointers or raw C struct dumps. The serializer also supplies the full-state hash. Validate, write temporary file, flush/sync, atomic rename. Loading validates a separate candidate and commits it only on success. Failed loading blocks autosave until a deliberate recovery action.
 
 Add serialization and validation alongside every persistent state change. One added field must not create a parallel save format or derived authoritative store. The animation extension adds 2,180 bytes per save and five packaged PNG reads at startup. Existing manual/autosave frequency is unchanged. No network, database, background task or runtime dependency is added.
 
@@ -109,7 +109,7 @@ Add serialization and validation alongside every persistent state change. One ad
 
 `tests/rts_tests.c` checks the new rules at owning boundaries, including conservation, reservations, generation reuse, direct orders, gate access, training arrival/cancellation/death, progression, metallurgy, repair, survival, combat, persistence failures and deterministic stepping. `test_view.c` drives the production input adapters with controlled platform input. `test_capacity.c` explicitly builds a maximum-population stress fixture.
 
-`tests/campaign.c` is a test-only player, never linked into the game. Treaty and military campaigns issue ordinary validated commands without stock/population/health injection. They check the target timings, recover from food shortage, suffer theft, save/load midway and complete the appropriate ending. Both compare version-3 full-state checkpoints. Their faster execution measures simulated time; it is not a human playtest.
+`tests/campaign.c` is a test-only player, never linked into the game. Treaty and military campaigns issue ordinary validated commands without stock/population/health injection. They check the target timings, recover from food shortage, suffer theft, save/load midway and complete the appropriate ending. Both compare version-4 full-state checkpoints. Their faster execution measures simulated time; it is not a human playtest.
 
 Historical version-1 save/hash fixtures are retained read-only. Old test source that depended on the retired single-faction/raider model is removed. It cannot prove intentional gameplay changes correct. See `tests/fixtures/README.md` for the explicit new baseline and `docs/country-validation.md` for evidence and remaining limits.
 
@@ -128,3 +128,15 @@ The idle counter, idle selection and Resume building action share `GameCitizenIs
 `ViewResumeConstruction` chooses the nearest idle player citizen and submits the existing `CMD_ORDER / ORDER_BUILD`. It never places a duplicate site or charges materials. `OrdersChoose` routes repair orders on unfinished buildings into `JOB_BUILD`, including queued orders and incomplete hut upgrades; existing job, building and economy owners handle labor and receipts.
 
 The input owner distinguishes a click, selection drag and empty-ground pan using the existing six-pixel threshold. Shift-drag adds a group; a drag starting over a citizen also selects. Left and middle pans retain their screen/camera origins, operate in logical coordinates, and keep ownership across HUD boundaries until release. Minimap dragging stays in its existing HUD owner. `ViewCancelDrag` clears all transient gesture state for overlays, load, new game and focus loss. Nothing is serialized. The hand is drawn after composition, above all UI and letterboxing; the OS cursor is restored outside the focused game window and on exit.
+
+## Building transformations
+
+`Building.rotation` selects one of two grid axes. `GameBuildingWidth/Height` are the sole live-footprint queries, used by placement, occupancy validation, jobs, deliveries, training, combat, rendering, and selection. `GameCanPlaceFor` remains the original-orientation compatibility query; `GameCanPlaceRotatedFor` and `GameCanTransformBuildingFor` share the building owner's terrain/occupancy validator. Moves may overlap their own footprint but cannot cover other structures or citizens on newly occupied tiles.
+
+`CMD_BUILD` carries an orientation. `CMD_MOVE_BUILDING`, `CMD_ROTATE_BUILDING`, and `CMD_DEMOLISH` enter through `GameCommandApply` and validate faction ownership and generation handles. Moving updates the same entity and occupancy, increments the map revision, and updates building-targeted order/rally coordinates. Jobs and training re-evaluate destinations through the existing pathfinding owner. Health, cargo, work, reservations, and queues are not reset or charged again. Demolition reuses `BuildingsDestroy`, including reservation losses, production cancellation, dependent-job cleanup, and housing removal. The UI confirms demolition separately from the existing refundable construction cancellation.
+
+`ViewContext` owns only transient orientation previews, the selected edit handle, and demolition confirmation. `ViewBuildingPreview` composes the simulation queries; escape, overlays, loading, focus loss, and stale handles cancel building edits. The contextual tray retains its 100px height. Q rotates without replacing the discoveries shortcut R.
+
+Existing atlas art is mirrored for the second view. Timber sprite foot anchors are fitted to the one-tile grid span using an upright textured quad, so adjacent palisades and gates meet. Rendering, previews, and sprite picking use the same geometry in `view/world.c`; no additional image files or asset loads are needed.
+
+Version 4 appends one little-endian orientation integer per building slot (2,048 bytes). Version-2/3 payload prefixes are unchanged. `tests/test_buildings.c` exercises commands, rotated edge placement, occupancy, continued work/training, reservations, destruction, paths, and persistence; view tests drive the production controls and export alignment/preview/confirmation evidence. The only runtime I/O change is the extra bytes in existing saves.

@@ -1,3 +1,5 @@
+#include "actions.h"
+#include "rlgl.h"
 #include "world.h"
 #include "animation.h"
 #include "assets.h"
@@ -167,19 +169,21 @@ static void TerrainDraw(ViewContext *ui)
         Building *building = &g->buildings[i];
         if (!building->alive)
             continue;
-        const BuildingDef *d = &BUILDINGS[building->type];
         if (building->type == FARM)
         {
             Diamond(building->x, building->y, 2, 2, (Color){104, 90, 63, 255});
             for (int row = 0; row < 6; row++)
             {
-                Vector2 start = ViewIso(building->x + 0.2f, building->y + row * 0.3f + 0.2f),
-                        end = ViewIso(building->x + 1.8f, building->y + row * 0.3f + 0.2f);
+                float offset = row * .3f + .2f;
+                Vector2 start = ViewIso(building->x + (building->rotation ? offset : .2f),
+                                       building->y + (building->rotation ? .2f : offset)),
+                        end = ViewIso(building->x + (building->rotation ? offset : 1.8f),
+                                     building->y + (building->rotation ? 1.8f : offset));
                 DrawLineEx(start, end, 3, (Color){76, 66, 45, 255});
             }
         }
         else
-            Diamond(building->x, building->y, d->w, d->h,
+            Diamond(building->x, building->y, GameBuildingWidth(building), GameBuildingHeight(building),
                     ViewMix((Color){163, 143, 101, 255}, (Color){199, 203, 184, 255}, snow * 0.45f));
     }
 }
@@ -192,9 +196,10 @@ static int DepthCompare(const void *a, const void *b)
 
 Vector2 ViewBuildingVisual(ViewContext *ui, const Building *b, Atlas *atlas, int *index, float *width)
 {
-    const BuildingDef *d = &BUILDINGS[b->type];
-    Vector2 foot = ViewIso(b->x + d->w * .5f, b->y + d->h * .5f);
-    foot.y += d->h * 5;
+    int w = GameBuildingWidth(b), h = GameBuildingHeight(b);
+    Vector2 foot = ViewIso(b->x + w * .5f, b->y + h * .5f);
+    if (b->type != PALISADE && b->type != GATE)
+        foot.y += fminf(w, h) * 5;
     *index = !b->complete                 ? 2
              : b->type >= TRAINING_GROUND ? 5
              : b->type == HEARTH          ? (b->upgraded ? 11 : 0)
@@ -203,8 +208,8 @@ Vector2 ViewBuildingVisual(ViewContext *ui, const Building *b, Atlas *atlas, int
     *width = !b->complete            ? 48
              : b->type == WORKSHOP   ? 126
              : b->type == HEARTH     ? 64
-             : b->type == PALISADE   ? 58
-             : b->type == GATE       ? 62
+             : b->type == PALISADE   ? 40
+             : b->type == GATE       ? 40
              : b->type == WATCH_POST ? 59
                                      : 102;
     *atlas = ui->objects;
@@ -223,6 +228,87 @@ Vector2 ViewBuildingVisual(ViewContext *ui, const Building *b, Atlas *atlas, int
     return foot;
 }
 
+// Upright atlas art fitted to the grid. The timber feet, rather than the
+// transparent cell edges, meet at each tile boundary in either orientation.
+static void BuildingQuad(ViewContext *ui, const Building *b, Atlas *atlas, int *index, Vector2 quad[4])
+{
+    float width;
+    Vector2 foot = ViewBuildingVisual(ui, b, atlas, index, &width);
+    Rectangle src = atlas->rect[*index];
+    float height = src.width > 0 ? width * src.height / src.width : width;
+    quad[0] = (Vector2){foot.x - width / 2, foot.y - height};
+    quad[1] = (Vector2){foot.x - width / 2, foot.y};
+    quad[2] = (Vector2){foot.x + width / 2, foot.y};
+    quad[3] = (Vector2){foot.x + width / 2, foot.y - height};
+    if (!b->complete || (b->type != PALISADE && b->type != GATE) || src.width <= 0 || src.height <= 0)
+        return;
+    float ax = b->type == PALISADE ? .07f : .10f, ay = b->type == PALISADE ? .68f : .71f;
+    float bx = .90f, by = .98f;
+    Vector2 a = ViewIso(b->x, b->y + .5f), z = ViewIso(b->x + 1, b->y + .5f);
+    if (b->rotation)
+    {
+        a = ViewIso(b->x + .5f, b->y + 1);
+        z = ViewIso(b->x + .5f, b->y);
+        float oldAx = ax, oldAy = ay;
+        ax = 1 - bx;
+        ay = by;
+        bx = 1 - oldAx;
+        by = oldAy;
+    }
+    ax *= src.width;
+    bx *= src.width;
+    ay *= src.height;
+    by *= src.height;
+    float scale = (z.x - a.x) / (bx - ax);
+    float shear = (z.y - a.y - (by - ay) * scale) / (bx - ax);
+    const Vector2 uv[] = {{0, 0}, {0, 1}, {1, 1}, {1, 0}};
+    for (int i = 0; i < 4; i++)
+    {
+        float x = uv[i].x * src.width - ax, y = uv[i].y * src.height - ay;
+        quad[i] = (Vector2){a.x + x * scale, a.y + y * scale + x * shear};
+    }
+}
+
+Rectangle ViewBuildingBounds(ViewContext *ui, const Building *b)
+{
+    Atlas atlas;
+    int index;
+    Vector2 quad[4];
+    BuildingQuad(ui, b, &atlas, &index, quad);
+    float x = quad[0].x, y = quad[0].y, right = x, bottom = y;
+    for (int i = 1; i < 4; i++)
+    {
+        x = fminf(x, quad[i].x);
+        y = fminf(y, quad[i].y);
+        right = fmaxf(right, quad[i].x);
+        bottom = fmaxf(bottom, quad[i].y);
+    }
+    return (Rectangle){x, y, right - x, bottom - y};
+}
+
+static void BuildingSprite(ViewContext *ui, const Building *b, Color tint)
+{
+    Atlas atlas;
+    int index;
+    Vector2 quad[4];
+    BuildingQuad(ui, b, &atlas, &index, quad);
+    Rectangle src = atlas.rect[index];
+    const Vector2 uv[] = {{0, 0}, {0, 1}, {1, 1}, {1, 0}};
+    rlSetTexture(atlas.texture.id);
+    rlBegin(RL_QUADS);
+    rlColor4ub(tint.r, tint.g, tint.b, tint.a);
+    rlNormal3f(0, 0, 1);
+    for (int i = 0; i < 4; i++)
+    {
+        float u = b->rotation ? 1 - uv[i].x : uv[i].x;
+        rlTexCoord2f((src.x + u * src.width) / atlas.texture.width,
+                     (src.y + uv[i].y * src.height) / atlas.texture.height);
+        rlVertex2f(quad[i].x, quad[i].y);
+    }
+    rlEnd();
+    rlSetTexture(0);
+}
+
 static void BuildingDraw(ViewContext *ui, int id)
 {
     GameState *g = ui->g;
@@ -234,9 +320,9 @@ static void BuildingDraw(ViewContext *ui, int id)
     Vector2 foot = ViewBuildingVisual(ui, b, &atlas, &index, &width);
     if (!b->complete)
     {
-        DiamondLine(b->x, b->y, d->w, d->h, Fade(ACCENT, 0.8f), 2);
+        DiamondLine(b->x, b->y, GameBuildingWidth(b), GameBuildingHeight(b), Fade(ACCENT, 0.8f), 2);
         Vector2 start = ViewIso(b->x + 0.2f, b->y + 0.2f),
-                end = ViewIso(b->x + d->w - 0.2f, b->y + d->h - 0.2f);
+                end = ViewIso(b->x + GameBuildingWidth(b) - 0.2f, b->y + GameBuildingHeight(b) - 0.2f);
         DrawLineEx(start, (Vector2){start.x, start.y - 30}, 4, (Color){115, 80, 45, 255});
         DrawLineEx(end, (Vector2){end.x, end.y - 30}, 4, (Color){115, 80, 45, 255});
         DrawLineEx((Vector2){start.x, start.y - 30}, (Vector2){end.x, end.y - 30}, 3,
@@ -261,7 +347,7 @@ static void BuildingDraw(ViewContext *ui, int id)
         }
         return;
     }
-    ViewSprite(atlas, index, foot, width, b->owner ? (Color){238, 194, 180, 255} : WHITE, false);
+    BuildingSprite(ui, b, b->owner ? (Color){238, 194, 180, 255} : WHITE);
     if (b->hp < GameBuildingMaxHealth(g, b))
         ViewBar(foot.x - 25, foot.y + 10, 50, (float)b->hp / GameBuildingMaxHealth(g, b),
                 b->owner ? RUST : SAGE);
@@ -324,10 +410,9 @@ static void SelectionDraw(ViewContext *ui)
     const Building *b = ViewSelectedBuilding(ui);
     if (b && b->generation == ui->selectedGeneration)
     {
-        const BuildingDef *d = &BUILDINGS[b->type];
-        DiamondLine(b->x, b->y, d->w, d->h, INK, 7 * pixel);
-        DiamondLine(b->x, b->y, d->w, d->h, PAPER, 4 * pixel);
-        DiamondLine(b->x, b->y, d->w, d->h, ACCENT, 2 * pixel);
+        DiamondLine(b->x, b->y, GameBuildingWidth(b), GameBuildingHeight(b), INK, 7 * pixel);
+        DiamondLine(b->x, b->y, GameBuildingWidth(b), GameBuildingHeight(b), PAPER, 4 * pixel);
+        DiamondLine(b->x, b->y, GameBuildingWidth(b), GameBuildingHeight(b), ACCENT, 2 * pixel);
     }
     for (int i = 0; i < ui->selectionCount; i++)
     {
@@ -378,7 +463,7 @@ void ViewWorldDraw(ViewContext *ui)
         if (!b->alive || !Visible(ui, b->x + 1, b->y + 1, 200))
             continue;
         items[count++] =
-            (DrawItem){1, i, (float)(b->x + b->y) + (BUILDINGS[b->type].w + BUILDINGS[b->type].h) * .5f};
+            (DrawItem){1, i, (float)(b->x + b->y) + (GameBuildingWidth(b) + GameBuildingHeight(b)) * .5f};
     }
     for (int i = 0; i < g->citizenCount; i++)
         if (g->citizens[i].alive && Visible(ui, g->citizens[i].x / 256.f, g->citizens[i].y / 256.f, 64))
@@ -489,22 +574,22 @@ void ViewWorldDraw(ViewContext *ui)
                 if (GameTile(xx, yy) >= 0 && abs(xx - x) + abs(yy - y) <= 9)
                     DiamondLine(xx, yy, 1, 1, Fade(ACCENT, .45f), 1);
     }
-    if (ui->build >= 0 && ui->hoverTile >= 0)
+    if ((ui->build >= 0 || (ui->movingBuilding && GameBuildingValid(g, ui->editBuilding))) &&
+        ui->hoverTile >= 0 && ViewWorldHit(ui))
     {
-        int x = ui->hoverTile % MAP_SIZE, y = ui->hoverTile / MAP_SIZE;
+        Building preview = {0};
         char why[256];
-        bool valid = GameCanPlace(g, ui->build, x, y, why, sizeof(why));
-        const BuildingDef *d = &BUILDINGS[ui->build];
-        Diamond(x, y, d->w, d->h, Fade(valid ? SAGE : RUST, .42f));
-        DiamondLine(x, y, d->w, d->h, valid ? SAGE : RUST, 2.5f);
-        int index = ui->build == WATCH_POST ? 8
-                    : ui->build == PALISADE ? 9
-                    : ui->build == GATE     ? 10
-                                            : ui->build;
-        ViewSprite(ui->build >= TRAINING_GROUND ? ui->bronze : ui->objects,
-                   ui->build >= TRAINING_GROUND ? ui->build - TRAINING_GROUND : index,
-                   ViewIso(x + d->w * .5f, y + d->h * .5f), ui->build == WORKSHOP ? 126 : 90,
-                   Fade(WHITE, .65f), false);
+        bool valid = ViewBuildingPreview(ui, &preview, why, sizeof(why));
+        int w = GameBuildingWidth(&preview), h = GameBuildingHeight(&preview);
+        Diamond(preview.x, preview.y, w, h, Fade(valid ? SAGE : RUST, .42f));
+        DiamondLine(preview.x, preview.y, w, h, valid ? SAGE : RUST, 2.5f);
+        BuildingSprite(ui, &preview, Fade(valid ? WHITE : RUST, .65f));
+        // The small axis marker makes rotation clear even for symmetric artwork.
+        Vector2 center = ViewIso(preview.x + w * .5f, preview.y + h * .5f);
+        Vector2 end = ViewIso(preview.x + w * .5f + (preview.rotation ? 0 : .7f),
+                              preview.y + h * .5f + (preview.rotation ? .7f : 0));
+        DrawLineEx(center, end, 3 / ui->camera.zoom, PAPER);
+        DrawCircleV(end, 3 / ui->camera.zoom, ACCENT);
     }
     if (ui->panel == 1)
     {

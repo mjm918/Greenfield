@@ -22,7 +22,7 @@ bool ViewWorldPointHit(const ViewContext *ui, Vector2 point)
            !CheckCollisionPointRec(point, ViewBuildInfoRect(ui)) &&
            !CheckCollisionPointRec(point, ViewMapRect()) &&
            !CheckCollisionPointRec(point, ViewProductionRect(ui)) &&
-           !(ui->orderMode && CheckCollisionPointRec(point, ViewOrderHintRect())) &&
+           !((ui->orderMode || ui->movingBuilding) && CheckCollisionPointRec(point, ViewOrderHintRect())) &&
            !(ViewHasWarning(ui) && CheckCollisionPointRec(point, ViewWarningRect()));
 }
 bool ViewWorldHit(ViewContext *ui)
@@ -109,6 +109,7 @@ void ViewBuildPalette(ViewContext *ui)
         {
             ui->build = unlocked && affordable && ui->build != i ? i : -1;
             ui->buildInspect = i + 1;
+            ui->buildRotation = 0;
             ui->orderMode = 0;
         }
         bool selected = ui->build == i || (ui->build < 0 && ui->buildInspect == i + 1);
@@ -152,15 +153,24 @@ void ViewBuildPalette(ViewContext *ui)
             {
                 snprintf(why, sizeof(why), "Choose a tile. Shift repeats.");
                 if (ViewWorldHit(ui) && ui->hoverTile >= 0)
-                    GameCanPlace(ui->g, inspect, ui->hoverTile % MAP_SIZE, ui->hoverTile / MAP_SIZE, why,
-                                 sizeof(why));
+                {
+                    Building preview;
+                    ViewBuildingPreview(ui, &preview, why, sizeof(why));
+                }
             }
             else
                 snprintf(why, sizeof(why), "Materials ready. Click the building to place it.");
         }
     }
     ViewWrapText(ui, why, x, y + 43, 252, 16, PAPER);
-    ViewText(ui, "Hover for details / Esc cancels", x, y + 119, 14, MUTED);
+    if (ui->build >= 0)
+    {
+        if (ViewButton(ui, (Rectangle){x, y + 105, 130, 28}, "Rotate  Q", false, true))
+            ViewRotateBuilding(ui);
+        ViewText(ui, "Esc cancels", x + 142, y + 113, 14, MUTED);
+    }
+    else
+        ViewText(ui, "Hover for details / Esc cancels", x, y + 119, 14, MUTED);
 
     int detail = ViewBuildInfoType(ui);
     if (detail < 0)
@@ -287,13 +297,14 @@ void ViewWorldHUD(ViewContext *ui)
         DrawRectangleLinesEx(r, 1, ACCENT);
     }
     MiniMap(ui);
-    if (ui->orderMode)
+    if (ui->orderMode || ui->movingBuilding)
     {
         Rectangle r = ViewOrderHintRect();
         ViewRounded(r, INK);
         ViewBorder(r, ACCENT);
         ViewText(ui,
-                 ui->orderMode == VIEW_ORDER_RALLY ? "Choose a rally point / Esc cancels"
+                 ui->movingBuilding ? "Move: click a position / Q rotates / Esc cancels"
+                 : ui->orderMode == VIEW_ORDER_RALLY ? "Choose a rally point / Esc cancels"
                  : ui->orderMode == ORDER_GATHER
                      ? "Gather: left-click a resource / Shift queues / Esc cancels"
                      : "Choose a target / Shift queues / Esc cancels",

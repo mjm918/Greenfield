@@ -15,4 +15,8 @@ void ViewHoldSelected(ViewContext *ui);
 void ViewTogglePanel(ViewContext *ui, int panel);
 void ViewBuildToggle(ViewContext *ui);
 void ViewCancelDrag(ViewContext *ui);
+void ViewCancelBuildingEdit(ViewContext *ui);
+void ViewMoveBuilding(ViewContext *ui);
+void ViewRotateBuilding(ViewContext *ui);
+bool ViewBuildingPreview(ViewContext *ui, Building *preview, char *reason, int size);
 #endif

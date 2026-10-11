@@ -41,6 +41,9 @@ typedef struct
     bool panCandidate, panning, dragAdd, mapDragging, showCursor;
     int panButton;
     bool buildMenu;
+    bool movingBuilding, confirmDemolish;
+    EntityRef editBuilding;
+    int buildRotation;
     int buildInspect; // Building type + 1; zero means no pinned requirements card.
     bool clickConsumed;
     int commandPage;
