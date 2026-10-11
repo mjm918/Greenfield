@@ -14,6 +14,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/html5.h>
+
+EM_JS(double, BrowserElapsed, (double elapsed), {
+    return document.hidden ? 0 : Math.min(.25, elapsed);
+})
+
+EM_JS(void, BrowserReady, (int ready), {
+    Module['greenfieldReady'] = !!ready;
+    Module['setStatus'](ready ? "" : 'Could not start Greenfield. Reload to try again.');
+})
+#endif
 
 static void Draw(ViewContext *ui)
 {
@@ -54,6 +67,75 @@ static void Draw(ViewContext *ui)
         ViewCursor(ui, (Vector2){dst.x, dst.y}, scale);
     EndDrawing();
 }
+
+static double UpdateDrawFrame(ViewContext *ui, bool capture, int captureBuild, int benchmarkFrames)
+{
+    GameState *game = ui->g;
+    double frameSeconds = GetFrameTime();
+#ifdef __EMSCRIPTEN__
+    // Browser tabs suspend animation frames. Do not simulate the time spent away.
+    frameSeconds = BrowserElapsed(frameSeconds);
+#endif
+    // Limit camera jumps after a stall without dropping simulation time.
+    float dt = (float)frameSeconds;
+    if (dt > .25f)
+        dt = .25f;
+    ui->time += dt;
+    ui->toastTime = fmaxf(0, ui->toastTime - dt);
+    float scale = ViewMinF(GetScreenWidth() / (float)SCREEN_W, GetScreenHeight() / (float)SCREEN_H);
+    Vector2 raw = GetMousePosition();
+    ui->mouse = (Vector2){(raw.x - (GetScreenWidth() - SCREEN_W * scale) / 2) / scale,
+                          (raw.y - (GetScreenHeight() - SCREEN_H * scale) / 2) / scale};
+    ui->showCursor = !capture && IsCursorOnScreen() && IsWindowFocused();
+    if (ui->showCursor && !IsCursorHidden())
+        HideCursor();
+    else if (!ui->showCursor && IsCursorHidden())
+        ShowCursor();
+    Vector2 tile = ViewTileAt(ui, ui->mouse);
+    ui->hoverTile = GameTile((int)floorf(tile.x), (int)floorf(tile.y));
+    if (!IsWindowFocused())
+    {
+        ViewCancelDrag(ui);
+        ViewCancelBuildingEdit(ui);
+    }
+    if (!capture && IsWindowFocused())
+        ViewInput(ui, dt);
+    else if (captureBuild >= 0)
+        ui->hoverTile = GameTile(26, 27);
+    if (capture && benchmarkFrames)
+        GameAdvance(game, 1.0 / 60, 1, &ui->accumulator);
+    if (!ui->menu && !ui->help && !game->lost && (!game->won || ui->winSeen) && !capture)
+    {
+        GameAdvance(game, frameSeconds, ui->speed, &ui->accumulator);
+        if (!ui->autosaveBlocked && game->tick - ui->lastAutosave >= 1200)
+            ViewSave(ui);
+    }
+    double renderStart = GetTime();
+    Draw(ui);
+    return GetTime() - renderStart;
+}
+
+#ifdef __EMSCRIPTEN__
+static void BrowserFrame(void *arg)
+{
+    static bool ready = false;
+    ViewContext *ui = arg;
+    double width, height;
+    EmscriptenFullscreenChangeEvent fullscreen;
+    emscripten_get_fullscreen_status(&fullscreen);
+    const char *element = fullscreen.isFullscreen ? "body" : "#game-frame";
+    if (emscripten_get_element_css_size(element, &width, &height) == EMSCRIPTEN_RESULT_SUCCESS &&
+        width > 0 && height > 0 &&
+        ((int)width != GetScreenWidth() || (int)height != GetScreenHeight()))
+        SetWindowSize((int)width, (int)height);
+    UpdateDrawFrame(ui, false, -1, 0);
+    if (!ready)
+    {
+        BrowserReady(1);
+        ready = true;
+    }
+}
+#endif
 
 int GameViewRun(GameState *game, int argc, char **argv, bool returning)
 {
@@ -110,14 +192,25 @@ int GameViewRun(GameState *game, int argc, char **argv, bool returning)
                             .zoom = .86f};
     ViewSaveFolder(ui);
     SetTraceLogLevel(LOG_WARNING);
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_HIGHDPI |
-                   (capture ? FLAG_WINDOW_HIDDEN : FLAG_VSYNC_HINT));
+    unsigned int flags = FLAG_WINDOW_RESIZABLE;
+#ifndef __EMSCRIPTEN__
+    flags |= FLAG_WINDOW_HIGHDPI;
+#endif
+    SetConfigFlags(flags | (capture ? FLAG_WINDOW_HIDDEN : FLAG_VSYNC_HINT));
     InitWindow(1440, 900, "Greenfield - Tribe to Country");
     if (!IsWindowReady())
+    {
+#ifdef __EMSCRIPTEN__
+        BrowserReady(0);
+#endif
         return 1;
+    }
     SetExitKey(KEY_NULL);
+#ifndef __EMSCRIPTEN__
     SetWindowMinSize(1000, 625);
+#endif
     SetTargetFPS(60);
+#ifndef __EMSCRIPTEN__
     if (!capture)
     {
         int monitor = GetCurrentMonitor();
@@ -125,6 +218,7 @@ int GameViewRun(GameState *game, int argc, char **argv, bool returning)
         float scale = ViewMinF(1, ViewMinF(width / (float)SCREEN_W, height / (float)SCREEN_H));
         SetWindowSize((int)(SCREEN_W * scale), (int)(SCREEN_H * scale));
     }
+#endif
     bool assetsReady = ViewAssetsLoad(ui);
     int result = 0;
     if (!assetsReady)
@@ -177,48 +271,19 @@ int GameViewRun(GameState *game, int argc, char **argv, bool returning)
         if (benchmarkFrames)
             SetTargetFPS(0);
     }
+#ifdef __EMSCRIPTEN__
+    if (!ui->quit)
+    {
+        // The static context and heap-owned GameState outlive main's stack.
+        emscripten_set_main_loop_arg(BrowserFrame, ui, 0, 1);
+    }
+    BrowserReady(0);
+#else
     int rendered = 0;
     double renderTotal = 0, renderMax = 0;
     while (!WindowShouldClose() && !ui->quit && !ui->reference)
     {
-        double frameSeconds = GetFrameTime();
-        // Limit camera jumps after a stall without dropping simulation time.
-        float dt = (float)frameSeconds;
-        if (dt > .25f)
-            dt = .25f;
-        ui->time += dt;
-        ui->toastTime = fmaxf(0, ui->toastTime - dt);
-        float scale = ViewMinF(GetScreenWidth() / (float)SCREEN_W, GetScreenHeight() / (float)SCREEN_H);
-        Vector2 raw = GetMousePosition();
-        ui->mouse = (Vector2){(raw.x - (GetScreenWidth() - SCREEN_W * scale) / 2) / scale,
-                              (raw.y - (GetScreenHeight() - SCREEN_H * scale) / 2) / scale};
-        ui->showCursor = !capture && IsCursorOnScreen() && IsWindowFocused();
-        if (ui->showCursor && !IsCursorHidden())
-            HideCursor();
-        else if (!ui->showCursor && IsCursorHidden())
-            ShowCursor();
-        Vector2 tile = ViewTileAt(ui, ui->mouse);
-        ui->hoverTile = GameTile((int)floorf(tile.x), (int)floorf(tile.y));
-        if (!IsWindowFocused())
-        {
-            ViewCancelDrag(ui);
-            ViewCancelBuildingEdit(ui);
-        }
-        if (!capture && IsWindowFocused())
-            ViewInput(ui, dt);
-        else if (captureBuild >= 0)
-            ui->hoverTile = GameTile(26, 27);
-        if (capture && benchmarkFrames)
-            GameAdvance(game, 1.0 / 60, 1, &ui->accumulator);
-        if (!ui->menu && !ui->help && !game->lost && (!game->won || ui->winSeen) && !capture)
-        {
-            GameAdvance(game, frameSeconds, ui->speed, &ui->accumulator);
-            if (!ui->autosaveBlocked && game->tick - ui->lastAutosave >= 1200)
-                ViewSave(ui);
-        }
-        double renderStart = GetTime();
-        Draw(ui);
-        double elapsed = GetTime() - renderStart;
+        double elapsed = UpdateDrawFrame(ui, capture != NULL, captureBuild, benchmarkFrames);
         if (rendered >= 10)
         {
             renderTotal += elapsed;
@@ -242,6 +307,7 @@ int GameViewRun(GameState *game, int argc, char **argv, bool returning)
     }
     if (ui->reference)
         result = 2;
+#endif
     ViewAssetsUnload(ui);
     ShowCursor();
     CloseWindow();

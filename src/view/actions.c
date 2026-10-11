@@ -8,6 +8,30 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+
+EM_JS(int, BrowserStorageReady, (void), {
+    return Module['greenfieldStorageReady'] ? 1 : 0;
+})
+
+EMSCRIPTEN_KEEPALIVE void ViewBrowserSaveComplete(ViewContext *ui, int ok)
+{
+    ui->browserSavePending = false;
+    ui->autosaveBlocked = !ok;
+    ViewToast(ui, ok ? "Village saved in this browser."
+                     : "Browser storage could not save. Keep this tab open and press F5 to retry.");
+}
+
+EM_JS(void, BrowserFlushSave, (ViewContext *ui), {
+    Module['greenfieldSaving'] = true;
+    const complete = function(error) {
+        Module['greenfieldSaving'] = false;
+        Module.ccall('ViewBrowserSaveComplete', null, ['number', 'number'], [ui, error ? 0 : 1]);
+    };
+    try { FS.syncfs(false, complete); } catch (error) { complete(error); }
+})
+#endif
 
 void ViewCancelDrag(ViewContext *ui)
 {
@@ -87,6 +111,9 @@ bool ViewCommand(ViewContext *ui, int type, int a, int b, int c)
 
 void ViewSaveFolder(ViewContext *ui)
 {
+#ifdef __EMSCRIPTEN__
+    snprintf(ui->savePath, sizeof(ui->savePath), "/greenfield-save/country.gfv2");
+#else
     const char *home = getenv("HOME");
     if (!home)
         home = ".";
@@ -96,12 +123,23 @@ void ViewSaveFolder(ViewContext *ui)
 #else
     snprintf(ui->savePath, sizeof(ui->savePath), "%s/.greenfield/country.gfv2", home);
 #endif
+#endif
 }
 
 bool ViewSave(ViewContext *ui)
 {
     // One attempt per autosave interval, even if the filesystem is unavailable.
     ui->lastAutosave = ui->g->tick;
+#ifdef __EMSCRIPTEN__
+    if (ui->browserSavePending)
+        return false;
+    if (!BrowserStorageReady())
+    {
+        ui->autosaveBlocked = true;
+        ViewToast(ui, "Browser storage unavailable. Allow site storage and reload before saving.");
+        return false;
+    }
+#endif
     char parent[4096];
     snprintf(parent, sizeof(parent), "%s", ui->savePath);
     char *slash = strrchr(parent, '/');
@@ -116,9 +154,20 @@ bool ViewSave(ViewContext *ui)
     }
     char why[256];
     bool ok = GameSave(ui->g, ui->savePath, why, sizeof(why));
+#ifdef __EMSCRIPTEN__
+    if (ok)
+    {
+        ui->browserSavePending = true;
+        ViewToast(ui, "Saving village to this browser...");
+        BrowserFlushSave(ui);
+    }
+    else
+        ViewToast(ui, why);
+#else
     ViewToast(ui, why);
     if (ok)
         ui->autosaveBlocked = false;
+#endif
     return ok;
 }
 

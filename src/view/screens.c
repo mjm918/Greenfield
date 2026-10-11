@@ -65,6 +65,17 @@ void ViewMenu(ViewContext *ui)
     }
     if (ViewButton(ui, (Rectangle){503, 479, 427, 41}, "Save village   F5", false, !ui->g->lost))
         ViewSave(ui);
+#ifdef __EMSCRIPTEN__
+    if (ViewButton(ui, (Rectangle){503, 533, 207, 41}, "Field guide", false, true))
+    {
+        ui->help = true;
+        ui->menu = false;
+    }
+    if (ViewButton(ui, (Rectangle){723, 533, 207, 41}, "Fullscreen", false, true))
+        ToggleBorderlessWindowed();
+    ViewWrapText(ui, "Your village stays in this browser. Wait for the saved message before closing the tab.",
+                 503, 590, 427, 17, MUTED);
+#else
     if (ViewButton(ui, (Rectangle){503, 533, 427, 41}, "Reference Viewer", false, true))
         ui->reference = true;
     if (ViewButton(ui, (Rectangle){503, 587, 207, 41}, "Field guide", false, true))
@@ -74,6 +85,7 @@ void ViewMenu(ViewContext *ui)
     }
     if (ViewButton(ui, (Rectangle){723, 587, 207, 41}, "Quit", false, true))
         ui->quit = true;
+#endif
     ViewLabel(ui, "SINGLE PLAYER    /    OFFLINE    /    ONE LOCAL SAVE", 503, 664);
     ViewWrapText(ui,
                  ui->toastTime > 0 ? ui->toast

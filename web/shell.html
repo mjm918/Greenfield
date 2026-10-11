@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Lead eight survivors from the Ice Age to a Bronze Age country. Play Greenfield, a single-player survival RTS, in your browser.">
+  <title>Greenfield — From Tribe to Country</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #101d17; color: #eee7d2; }
+    * { box-sizing: border-box; }
+    body { margin: 0; height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+    header, footer { padding: 10px 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; }
+    header { border-bottom: 1px solid #3e5144; }
+    h1 { font-size: 18px; margin: 0; letter-spacing: .03em; }
+    header p, footer p { margin: 0; font-size: 13px; color: #bcc8b7; }
+    header a { margin-left: auto; }
+    a { color: #e6c57b; font-size: 13px; }
+    a:hover { color: #fff0c4; }
+    a:focus-visible, canvas:focus-visible { outline: 2px solid #e6c57b; outline-offset: -2px; }
+    main { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; background: #101d17; touch-action: none; }
+    #status { position: absolute; inset: 0; display: grid; place-content: center; padding: 24px; text-align: center; background: #101d17; }
+    #status[hidden] { display: none; }
+    footer { border-top: 1px solid #3e5144; }
+    noscript { padding: 24px; }
+    @media (max-width: 700px) { header p, footer .controls { display: none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Greenfield</h1>
+    <p>From Tribe to Country</p>
+    <a href="https://github.com/mjm918/Greenfield" target="_blank" rel="noopener">Source &amp; guide</a>
+  </header>
+  <main id="game-frame">
+    <canvas id="canvas" width="1440" height="900" tabindex="0" aria-label="Greenfield game. Keyboard and mouse recommended. Press H for the field guide."></canvas>
+    <div id="status" role="status" aria-live="polite">Loading Greenfield…</div>
+  </main>
+  <footer>
+    <p class="controls">Drag to pan · Shift-drag to select · Right-click to command · Space to pause · H for help</p>
+    <p id="storage-status">Saves stay in this browser · F5 save · F9 load · F fullscreen</p>
+  </footer>
+  <noscript>Enable JavaScript to play Greenfield.</noscript>
+  <script>
+    var canvas = document.getElementById('canvas');
+    var statusElement = document.getElementById('status');
+    var Module = {
+      canvas: canvas,
+      setStatus: function (message) {
+        statusElement.textContent = message;
+        statusElement.hidden = !message;
+      },
+      monitorRunDependencies: function (remaining) {
+        if (remaining) Module.setStatus('Loading artwork and your village…');
+      },
+      onAbort: function () {
+        Module.setStatus('Greenfield could not start. Check WebGL 2 is enabled, then reload.');
+      },
+      printErr: function (message) { console.error(message); }
+    };
+    canvas.addEventListener('contextmenu', function (event) { event.preventDefault(); });
+    canvas.addEventListener('pointerdown', function () { canvas.focus(); });
+    canvas.addEventListener('webglcontextlost', function (event) {
+      event.preventDefault();
+      Module.setStatus('The graphics connection was lost. Reload to continue from your last save.');
+    });
+    // Keep browser reload/help/scroll shortcuts from swallowing the game's controls.
+    window.addEventListener('keydown', function (event) {
+      if (document.activeElement === canvas &&
+          (['F1', 'F2', 'F3', 'F5', 'F9', ' ', 'Home', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key) ||
+           (event.ctrlKey && /^[0-9]$/.test(event.key)))) event.preventDefault();
+    }, true);
+    window.addEventListener('error', function () {
+      Module.setStatus('Greenfield encountered an error. Reload to try again.');
+    });
+    canvas.focus();
+  </script>
+  {{{ SCRIPT }}}
+</body>
+</html>

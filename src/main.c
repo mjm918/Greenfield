@@ -2,12 +2,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef __EMSCRIPTEN__
 int ReferenceMain(int argc, char **argv);
+#endif
 int main(int argc, char **argv)
 {
+#ifndef __EMSCRIPTEN__
     for (int i = 1; i < argc; i++)
         if (!strcmp(argv[i], "--reference") || !strcmp(argv[i], "--verify") || !strcmp(argv[i], "--capture"))
             return ReferenceMain(argc, argv);
+#endif
     if (argc > 1 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h")))
     {
         puts("Greenfield - Tribe to Country\n  --play                      Begin a new campaign\n  --load "
@@ -34,12 +38,14 @@ int main(int argc, char **argv)
     do
     {
         result = GameViewRun(game, argc, argv, returning);
+#ifndef __EMSCRIPTEN__
         if (result == 2)
         {
             char *reference[] = {argv[0], "--reference"};
             ReferenceMain(2, reference);
             returning = true;
         }
+#endif
     } while (result == 2);
     free(game);
     return result;

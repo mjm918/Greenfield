@@ -2,6 +2,8 @@
 
 An offline survival RTS in C and raylib. Lead eight Ice Age survivors through winter, establish a farming village, and develop a Bronze Age country. Direct workers and soldiers in a fully visible **96 × 96 valley** against one rival with its own economy. Continue in the same world after victory.
 
+**[Play in your browser](https://mjm918.github.io/Greenfield/)** — keyboard and mouse recommended. The browser edition runs the same C game through WebAssembly and GPU-accelerated **WebGL 2** (not WebGPU).
+
 The first village milestone targets **45–60 minutes at 1×**; country formation targets **120–180 minutes**. The two automated command campaigns currently reach those milestones at **53:10** and **124:25**. These measure simulation time, not a completed human or wall-clock playtest. See [validation evidence](docs/country-validation.md).
 
 ## Build and run
@@ -17,6 +19,37 @@ open build/bin/Greenfield.app
 Assets load beside the executable. The renderer keeps the smooth isometric artwork, mipmapped sprites, Source Sans 3 Regular/Semibold fonts and restrained pixel borders. The 1440 × 900 logical view renders at 2880 × 1800 for Retina output. **Reference Viewer** preserves the cleaned illustration without the social icons or “Ninety thousand acres” label.
 
 The gameplay HUD has a 48px resource strip and compact floating controls. The world extends to the bottom edge: a 100px selection tray (50px when nothing is selected) and a separate minimap replace the full-width bottom band. Construction expands to 142px only while open. Empty queues and permanent instruction columns take no space; occupied queues appear above the tray. Select workers for construction and work commands, soldiers for combat commands, or buildings for their production and upgrade controls. Objectives, workforce, discoveries and diplomacy open in a dismissible ledger; no permanent sidebar remains. Hover controls for costs and requirements. Resource totals are compacted above 10,000; hover shows exact values.
+
+## Browser build and GitHub Pages
+
+Use [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html) **4.0.23**, the version pinned in `.github/workflows/pages.yml`:
+
+```sh
+source /path/to/emsdk/emsdk_env.sh
+emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+cmake --build build-web --parallel
+python3 -m http.server 8080 --directory build-web/bin
+```
+
+Open `http://localhost:8080` through an HTTP server, rather than opening the HTML file directly. A browser with WebGL 2 enabled is required. CMake packages the same gameplay atlases and fonts in `index.data`; `index.html`, `index.js` and `index.wasm` are the other deployment files. The animated reference viewer remains desktop-only.
+
+Browser saves use the existing version-4 codec and one `country.gfv2` slot, mounted at `/greenfield-save` in IndexedDB. The slot is restored before the game starts. **F5** or **Save village** writes it, and **F9** or **Continue / Load** restores it. Wait for “Village saved in this browser” before closing the tab. Saving errors remain visible and pause autosave; a failed initial storage restore prevents writing over an unread save. Clearing site data removes the slot; private browsing or blocked storage can prevent persistence. Desktop and browser saves are separate, and there is no cloud synchronization. Use one game tab at a time.
+
+The browser suspends progress while the tab is hidden and limits elapsed time after long stalls. The canvas fits the available window; **F** or the menu's **Fullscreen** button enlarges it. Desktop controls are retained; this is not a touch-control adaptation.
+
+Pushes to `main` run native tests, build WebAssembly, exercise browser gameplay/save recovery, then deploy the generated files to GitHub Pages. Pull requests run the same validation without deployment. The repository's **Settings → Pages → Source** must be **GitHub Actions**. No build output or player saves belong in Git.
+
+Run the same browser checks locally with Node.js 22:
+
+```sh
+npm install --prefix build/browser-tools playwright@1.56.1
+build/browser-tools/node_modules/.bin/playwright install chromium
+NODE_PATH="$PWD/build/browser-tools/node_modules" node tests/web_smoke.cjs
+# Validate the published site in a fresh, isolated browser session:
+WEB_URL=https://mjm918.github.io/Greenfield/ NODE_PATH="$PWD/build/browser-tools/node_modules" node tests/web_smoke.cjs
+```
+
+Screenshots and a JSON report go to `build/evidence/`. The checks cover actual menu/keyboard input, simulation progress, save/reload equality, storage failure and retry, resizing, fullscreen, and unavailable storage. Gameplay adds no network calls after the initial static downloads. Each save adds one IndexedDB synchronization; startup adds one restore, without a second serializer or gameplay store.
 
 ## Building a civilization
 

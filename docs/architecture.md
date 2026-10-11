@@ -12,6 +12,8 @@ save.c -> GameValidate -> explicit version-4 wire format (also reads country v2/
 
 `greenfield_sim` has no raylib dependency. Simulation uses integer ticks and the RNG in `GameState`, never rendering time, input, filesystem access or platform randomness. `game.c` orchestrates initialization, dispatch and the fixed 100 ms tick. `save.c` alone owns persistence. The UI and rival AI both submit `GameCommandApply` commands.
 
+The browser build compiles these same modules with Emscripten and raylib's WebGL 2 renderer. `game_view.c` shares one frame function between the desktop loop and browser animation callback. `web/shell.html` owns the canvas and loading/error presentation; `web/storage.js` restores the IndexedDB filesystem before startup. `ViewSave` still calls `GameSave` and then, on web only, synchronizes that file to IndexedDB. Completion feedback waits for the asynchronous write. No simulation state or save wire format is added. CMake's one asset manifest feeds native packaging and the browser preload archive. The reference viewer stays native.
+
 ## Authoritative owners
 
 | Module | Responsibility |

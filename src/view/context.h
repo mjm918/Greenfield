@@ -30,6 +30,9 @@ typedef struct
     float time;
     int panel, build, selected, selectedCitizen, areaRole, speed, lastSpeed;
     bool menu, help, confirmNew, winSeen, allowInput, grid, quit, reference, autosaveBlocked;
+#ifdef __EMSCRIPTEN__
+    bool browserSavePending;
+#endif
     char toast[256], savePath[4096];
     float toastTime;
     double accumulator;

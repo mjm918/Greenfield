@@ -1,0 +1,70 @@
+name: Build, test and deploy Greenfield
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native graphics dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev libx11-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev xvfb
+      - name: Build and test native game
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 2
+          xvfb-run -a ctest --test-dir build --output-on-failure
+      - name: Install pinned Emscripten SDK
+        run: |
+          git clone --depth 1 --branch 4.0.23 https://github.com/emscripten-core/emsdk.git build/tools/emsdk
+          build/tools/emsdk/emsdk install 4.0.23
+          build/tools/emsdk/emsdk activate 4.0.23
+      - name: Build browser game
+        run: |
+          source build/tools/emsdk/emsdk_env.sh
+          emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+          cmake --build build-web --parallel 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check browser gameplay and persistence
+        run: |
+          npm install --prefix build/browser-tools playwright@1.56.1
+          build/browser-tools/node_modules/.bin/playwright install --with-deps chromium
+          NODE_PATH="$PWD/build/browser-tools/node_modules" node tests/web_smoke.cjs
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-evidence
+          path: build/evidence/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build-web/bin
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

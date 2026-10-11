@@ -5,6 +5,12 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
+if(EMSCRIPTEN)
+    set(PLATFORM Web CACHE STRING "" FORCE)
+    set(OPENGL_VERSION "ES 3.0" CACHE STRING "" FORCE)
+    set(BUILD_TESTING OFF CACHE BOOL "Native tests run in a separate desktop build")
+endif()
+
 include(FetchContent)
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(CUSTOMIZE_BUILD OFF CACHE BOOL "" FORCE)
@@ -23,7 +29,10 @@ target_compile_definitions(raylib PRIVATE
 set(GREENFIELD_VIEW_SOURCES
     src/view/actions.c src/view/animation.c src/view/assets.c src/view/hud.c src/view/input.c
     src/view/panels.c src/view/selection.c src/view/screens.c src/view/widgets.c src/view/world.c)
-add_executable(greenfield src/main.c src/reference.c src/game_view.c ${GREENFIELD_VIEW_SOURCES})
+add_executable(greenfield src/main.c src/game_view.c ${GREENFIELD_VIEW_SOURCES})
+if(NOT EMSCRIPTEN)
+    target_sources(greenfield PRIVATE src/reference.c)
+endif()
 target_link_libraries(greenfield PRIVATE raylib greenfield_sim)
 if(NOT MSVC)
     target_compile_options(greenfield PRIVATE -Wall -Wextra -Wpedantic)
@@ -39,29 +48,62 @@ if(APPLE)
         OUTPUT_NAME Greenfield
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist.in")
 endif()
-add_custom_command(TARGET greenfield POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:greenfield>/assets"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/ui.jpeg"
-        "$<TARGET_FILE_DIR:greenfield>/assets/ui.jpeg"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/overlay-repair.png"
-        "$<TARGET_FILE_DIR:greenfield>/assets/overlay-repair.png"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/title-repair.png"
-        "$<TARGET_FILE_DIR:greenfield>/assets/title-repair.png"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/scene.fs"
-        "$<TARGET_FILE_DIR:greenfield>/assets/scene.fs")
-# A shader edit must also refresh the executable's asset copy.
-set_property(TARGET greenfield APPEND PROPERTY LINK_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/scene.fs"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/overlay-repair.png"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/title-repair.png"
-    "${CMAKE_CURRENT_SOURCE_DIR}/ui.jpeg")
+set(GREENFIELD_ASSETS
+    assets/bronze-atlas.png
+    assets/resource-states-atlas.png
+    assets/settlement-atlas.png
+    assets/citizen-atlas.png
+    assets/citizen-braids-atlas.png
+    assets/citizen-north-atlas.png
+    assets/citizen-braids-north-atlas.png
+    assets/citizen-jobs-atlas.png
+    assets/citizen-braids-jobs-atlas.png
+    assets/deer-atlas.png
+    assets/SourceSans3-Regular.ttf
+    assets/SourceSans3-Semibold.ttf
+    assets/SourceSans3-LICENSE.md
+)
+if(EMSCRIPTEN)
+    set_target_properties(greenfield PROPERTIES OUTPUT_NAME index SUFFIX ".html")
+    # Emscripten's JS interop macros (also used by raylib) require GNU C extensions.
+    set_target_properties(greenfield raylib PROPERTIES C_EXTENSIONS ON)
+    # raylib exports ccall alone by default, but its fullscreen path also calls this runtime API.
+    get_target_property(raylib_web_options raylib INTERFACE_LINK_OPTIONS)
+    list(REMOVE_ITEM raylib_web_options "-sEXPORTED_RUNTIME_METHODS=ccall")
+    set_property(TARGET raylib PROPERTY INTERFACE_LINK_OPTIONS "${raylib_web_options}")
+    target_link_options(greenfield PRIVATE
+        "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html"
+        "--pre-js=${CMAKE_CURRENT_SOURCE_DIR}/web/storage.js"
+        -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=4194304
+        -sINITIAL_MEMORY=67108864 -sASSERTIONS=1 -sEXIT_RUNTIME=0
+        -sEXPORTED_RUNTIME_METHODS=ccall,requestFullscreen
+        -lidbfs.js)
+    set_property(TARGET greenfield APPEND PROPERTY LINK_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html"
+        "${CMAKE_CURRENT_SOURCE_DIR}/web/storage.js")
+else()
+    list(APPEND GREENFIELD_ASSETS ui.jpeg assets/overlay-repair.png
+        assets/title-repair.png src/scene.fs)
+    add_custom_command(TARGET greenfield POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:greenfield>/assets")
+endif()
+# One asset manifest feeds both the native bundle and the browser's virtual filesystem.
+foreach(asset IN LISTS GREENFIELD_ASSETS)
+    get_filename_component(asset_name "${asset}" NAME)
+    if(EMSCRIPTEN)
+        target_link_options(greenfield PRIVATE
+            "SHELL:--preload-file \"${CMAKE_CURRENT_SOURCE_DIR}/${asset}@/assets/${asset_name}\"")
+    else()
+        add_custom_command(TARGET greenfield POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/${asset}"
+                "$<TARGET_FILE_DIR:greenfield>/assets/${asset_name}")
+    endif()
+    set_property(TARGET greenfield APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${asset}")
+endforeach()
 
 include(CTest)
-if(BUILD_TESTING)
+if(BUILD_TESTING AND NOT EMSCRIPTEN)
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/evidence")
     add_test(NAME scene_fidelity COMMAND greenfield --verify
         "${CMAKE_BINARY_DIR}/evidence")
@@ -77,7 +119,7 @@ target_include_directories(greenfield_sim PUBLIC src)
 if(NOT MSVC)
     target_compile_options(greenfield_sim PRIVATE -Wall -Wextra -Wpedantic)
 endif()
-if(BUILD_TESTING)
+if(BUILD_TESTING AND NOT EMSCRIPTEN)
     add_executable(game_resource_tests tests/test_resources.c)
     target_link_libraries(game_resource_tests PRIVATE greenfield_sim)
     add_test(NAME resource_depletion COMMAND game_resource_tests)
@@ -120,37 +162,7 @@ if(BUILD_TESTING)
     add_test(NAME hud_interactions COMMAND game_view_tests --render)
 endif()
 
-add_custom_command(TARGET greenfield POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/bronze-atlas.png"
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/resource-states-atlas.png"
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/settlement-atlas.png"
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-atlas.png"
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-atlas.png"
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-north-atlas.png"
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-north-atlas.png"
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-jobs-atlas.png"
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-jobs-atlas.png"
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/deer-atlas.png"
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceSans3-Regular.ttf"
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceSans3-Semibold.ttf"
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceSans3-LICENSE.md"
-        "$<TARGET_FILE_DIR:greenfield>/assets")
-set_property(TARGET greenfield APPEND PROPERTY LINK_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/bronze-atlas.png"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/resource-states-atlas.png"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/settlement-atlas.png"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-atlas.png"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-atlas.png"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-north-atlas.png"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-north-atlas.png"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-jobs-atlas.png"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-jobs-atlas.png"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/deer-atlas.png"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceSans3-Regular.ttf"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceSans3-Semibold.ttf"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceSans3-LICENSE.md")
-if(BUILD_TESTING)
+if(BUILD_TESTING AND NOT EMSCRIPTEN)
     add_executable(game_art_tests tests/test_art.c)
     target_link_libraries(game_art_tests PRIVATE raylib)
     add_test(NAME game_capture COMMAND greenfield --game-capture "${CMAKE_BINARY_DIR}/evidence/game-winter.png")
