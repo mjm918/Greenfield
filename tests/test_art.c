@@ -34,13 +34,14 @@ static void CheckAtlas(const char *path, int grid)
 }
 int main(int argc, char **argv)
 {
-    if (argc != 11)
+    if (argc != 12)
         return 2;
     SetTraceLogLevel(LOG_WARNING);
     CheckAtlas(argv[1], 4);
     CheckAtlas(argv[2], 4);
     CheckAtlas(argv[4], 4);
     CheckAtlas(argv[5], 2);
+    CheckAtlas(argv[11], 2);
     for (int i = 6; i < 11; i++)
         CheckAtlas(argv[i], 4);
     Image image = LoadImage(argv[3]);
@@ -93,7 +94,7 @@ int main(int argc, char **argv)
     }
     UnloadImageColors(p);
     UnloadImage(image);
-    printf("132 sprite cells checked; detailed world blocks: %d; smooth text pixels: %d\n", detailedBlocks,
+    printf("136 sprite cells checked; detailed world blocks: %d; smooth text pixels: %d\n", detailedBlocks,
            smoothText);
     return errors ? 1 : 0;
 }

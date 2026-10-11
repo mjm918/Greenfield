@@ -78,6 +78,9 @@ if(NOT MSVC)
     target_compile_options(greenfield_sim PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 if(BUILD_TESTING)
+    add_executable(game_resource_tests tests/test_resources.c)
+    target_link_libraries(game_resource_tests PRIVATE greenfield_sim)
+    add_test(NAME resource_depletion COMMAND game_resource_tests)
     add_executable(game_building_tests tests/test_buildings.c)
     target_link_libraries(game_building_tests PRIVATE greenfield_sim)
     add_test(NAME building_edits COMMAND game_building_tests)
@@ -120,6 +123,7 @@ endif()
 add_custom_command(TARGET greenfield POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/bronze-atlas.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/resource-states-atlas.png"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/settlement-atlas.png"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-atlas.png"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-atlas.png"
@@ -134,6 +138,7 @@ add_custom_command(TARGET greenfield POST_BUILD
         "$<TARGET_FILE_DIR:greenfield>/assets")
 set_property(TARGET greenfield APPEND PROPERTY LINK_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/bronze-atlas.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/resource-states-atlas.png"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/settlement-atlas.png"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-atlas.png"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-atlas.png"
@@ -160,6 +165,7 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-north-atlas.png"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-jobs-atlas.png"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/citizen-braids-jobs-atlas.png"
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/deer-atlas.png")
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/deer-atlas.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/resource-states-atlas.png")
     set_tests_properties(pixel_art PROPERTIES FIXTURES_REQUIRED game_image)
 endif()

@@ -75,7 +75,7 @@ void SurvivalUpdate(GameState *g)
         {
             Tile *tile = &g->tiles[t];
             if (tile->node == NODE_BERRIES || tile->node == NODE_GAME)
-                tile->amount = Min(400, tile->amount + 60);
+                tile->amount = Min(NATURAL_FOOD_CAPACITY, tile->amount + NATURAL_FOOD_PER_DAY);
             if (tile->node == NODE_NONE && tile->natural && tile->occupied < 0)
             {
                 if (tile->natural == NODE_STONE || tile->natural == NODE_ORE)

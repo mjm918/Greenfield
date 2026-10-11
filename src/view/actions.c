@@ -132,6 +132,7 @@ bool ViewLoad(ViewContext *ui, const char *path)
     if (ok)
     {
         ui->selectionCount = 0;
+        ui->selectedResource = 0;
         ui->orderMode = 0;
         ui->buildMenu = false;
         ui->commandPage = 0;
@@ -178,6 +179,7 @@ void ViewSelectIdle(ViewContext *ui)
     }
     ViewCancelBuildingEdit(ui);
     ui->selectionCount = 0;
+    ui->selectedResource = 0;
     for (int i = 0; i < ui->g->citizenCount; i++)
     {
         Citizen *c = &ui->g->citizens[i];
@@ -244,6 +246,7 @@ void ViewResumeConstruction(ViewContext *ui)
 void ViewSelectBuilding(ViewContext *ui, int id)
 {
     ViewCancelBuildingEdit(ui);
+    ui->selectedResource = 0;
     ui->selectionCount = 0;
     ui->selectedCitizen = -1;
     ui->selected = id;

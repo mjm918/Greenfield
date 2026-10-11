@@ -55,6 +55,7 @@ static void Select(ViewContext *ui, int id, bool toggle)
     Citizen *c = &ui->g->citizens[id];
     if (c->owner || !c->alive)
         return;
+    ui->selectedResource = 0;
     for (int i = 0; i < ui->selectionCount; i++)
         if (ui->selection[i].slot == id)
         {
@@ -139,6 +140,8 @@ void ViewInput(ViewContext *ui, float dt)
          ui->selected != ui->editBuilding.slot || ui->selectedGeneration != ui->editBuilding.generation))
         ViewCancelBuildingEdit(ui);
     ui->selectedCitizen = ui->selectionCount ? ui->selection[0].slot : -1;
+    if (ui->selectedResource && ViewSelectedResource(ui) < 0)
+        ui->selectedResource = 0;
     if (IsKeyPressed(KEY_ESCAPE))
     {
         if (ui->help)
@@ -161,6 +164,8 @@ void ViewInput(ViewContext *ui, float dt)
             ui->commandPage = 0;
         else if (ViewPanelOpen(ui))
             ui->panel = -1;
+        else if (ui->selectedResource)
+            ui->selectedResource = 0;
         else
             ui->menu = !ui->menu;
     }
@@ -231,6 +236,7 @@ void ViewInput(ViewContext *ui, float dt)
                         ui->selection[ui->selectionCount++] = ui->groups[k][i];
                 ViewCancelBuildingEdit(ui);
                 ui->selected = -1;
+                ui->selectedResource = 0;
                 ui->panel = -1;
                 ui->buildMenu = false;
                 ui->build = -1;
@@ -442,6 +448,7 @@ void ViewInput(ViewContext *ui, float dt)
             for (int i = 0; i < count; i++)
                 Select(ui, hits[i], false);
             ui->selected = -1;
+            ui->selectedResource = 0;
         }
         else
         {
@@ -458,6 +465,8 @@ void ViewInput(ViewContext *ui, float dt)
             else
             {
                 ViewSelectBuilding(ui, BuildingAt(ui));
+                if (ui->selected < 0)
+                    ui->selectedResource = ViewResourceAt(ui) + 1;
             }
         }
         ui->selectedCitizen = ui->selectionCount ? ui->selection[0].slot : -1;

@@ -375,6 +375,8 @@ void ViewSelectionDraw(ViewContext *ui)
                      h.x + 12, h.y + 88, 16, MUTED);
         }
     }
+    else if (ViewSelectedResource(ui) >= 0)
+        ViewResourceInfo(ui, ViewSelectedResource(ui), tray);
     else
         SettlementCommands(ui);
 }

@@ -71,3 +71,24 @@ The wildlife test also constructs a version-2 wire payload, loads it without cha
 ## Building orientation extension: version 4
 
 Version 4 appends 512 little-endian orientation integers (2,048 bytes). These campaigns issue no rotation/move/demolition commands, so every appended byte is zero and the entire version-3 payload is unchanged. The new checkpoint expectations are derived from each prior FNV-1a hash by appending 2,048 zero bytes (multiply by `1099511628211^2048` modulo `2^64`), rather than replacing expectations with observed outcomes. Both campaigns must still match every derived checkpoint and the existing semantic/timing assertions. Version-1 fixtures remain untouched. Country version-2 and version-3 loading is tested separately.
+
+## Slower natural-food renewal (save version 4 unchanged)
+
+Based on `935df17`, 2026-10-11. Berries and hunting grounds now regain 3 food per
+day instead of 60. This intentionally changes tile amounts, worker destinations,
+and subsequent combat/economy outcomes. Depleted visuals and resource inspection
+do not add serialized state. Initial supply amounts and the campaign scripts are
+unchanged.
+
+The pre-change 26 expectations are preserved in
+`rts-checkpoints-before-resource-renewal.inc`. The active `rts-checkpoints.inc`
+uses explicit candidate recordings from both campaigns after reviewing their
+semantic/timing assertions. It includes two later military checkpoints, giving
+28 enforced expectations; a zero treaty entry at those later ticks indicates
+that the treaty campaign has already ended, not a skipped military assertion.
+
+Both scenarios still form the village at 53:10. Treaty country completion is
+124:25, and military completion is 140:55, within the original target ranges.
+Both demonstrate shortage recovery, enemy theft, and a minute-75 save/load.
+Final hashes: treaty `77d8521249ede8ce`, military `51457dfb4072ff8d`.
+Existing semantic tests were not relaxed to accept the new baseline.

@@ -39,6 +39,8 @@ const UnitDef UNITS[] = {{{0}, 0, 18, 12, 1, 12, 40, 0},
 const int RECRUIT_COST[RESOURCE_COUNT] = {12};
 const int EQUIPMENT_COST[RESOURCE_COUNT] = {5, 0, 0, 0, 0, 0, 4};
 const int RECRUIT_TICKS[AGE_COUNT] = {2400, 2400, 1800, 1050};
+// Renewable fallback for sandbox play, below a single untooled forager's output.
+const int NATURAL_FOOD_PER_DAY = 3, NATURAL_FOOD_CAPACITY = 400;
 const RecipeDef TOOL_RECIPE = {{0, 2, 1}, TOOLS, 3, 300};
 const RecipeDef BRONZE_RECIPE = {{0, 2, 0, 0, 0, 4}, BRONZE, 2, 600};
 

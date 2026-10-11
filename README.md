@@ -30,7 +30,9 @@ The original twenty-person village objective remains an intermediate milestone: 
 
 Recruit adults at the center for twelve food, time and spare housing. Recruitment takes four minutes early, three minutes in the farming age, and 1m45s in Bronze. Housing loss pauses recruitment without deleting people. Each faction supports **96 living citizens**; dead slots are reused with generation-checked handles.
 
-Resources remain shared by faction, accessed through physical deliveries. Food, wood, stone, hides, tools, ore and bronze compete for construction, survival, technology and army production. Hover a resource to see campaign-average production/spending, reserved materials and food upkeep. Carrying goods does not make them spendable. Trees slowly regrow; exhausted mineral deposits provide reduced extraction for continued play.
+Resources remain shared by faction, accessed through physical deliveries. Food, wood, stone, hides, tools, ore and bronze compete for construction, survival, technology and army production. Hover a header resource to see campaign-average production/spending, reserved materials and food upkeep. Carrying goods does not make them spendable. Trees slowly regrow; exhausted mineral deposits provide reduced extraction for continued play.
+
+Hover a tree, berry bush, animal or deposit to see its exact remaining supplies. Click it to keep the live count in a compact bottom card; Esc clears the selection. Harvested trees leave stumps, then saplings before their wood returns. Bushes show fewer berries at 200 food or below and no berries when empty. Berry bushes and hunting grounds regenerate **3 food per game day** (three minutes at 1×), down from 60; sustained gathering now outpaces renewal. Select workers and target another site when one is exhausted. Existing saves retain their amounts and use the slower rate on future days.
 
 ## Army and rival
 

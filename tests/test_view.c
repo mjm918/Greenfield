@@ -2,6 +2,7 @@
 #include "raylib.h"
 #include "rlgl.h"
 #include "sim/jobs.h"
+#include "sim/economy.h"
 #include "sim/buildings.h"
 #include "sim/wildlife.h"
 #include "view/actions.h"
@@ -243,13 +244,13 @@ static void RenderAnimationChecks(ViewContext *u)
     CHECK(a->state == ANIMAL_RUN && (a->stepX || a->stepY));
     CaptureWorld(u, "evidence/animal-running.png");
 }
-static void CaptureControls(ViewContext *u, const char *path)
+static void CaptureControlsInput(ViewContext *u, const char *path, bool allowInput)
 {
     BeginTextureMode(u->canvas);
     ClearBackground(BLACK);
     ViewWorldDraw(u);
     BeginMode2D((Camera2D){.zoom = RENDER_SCALE});
-    u->allowInput = false;
+    u->allowInput = allowInput;
     ViewHeader(u);
     ViewSelectionDraw(u);
     ViewWorldHUD(u);
@@ -260,6 +261,120 @@ static void CaptureControls(ViewContext *u, const char *path)
     ImageFlipVertical(&image);
     CHECK(ExportImage(image, path));
     UnloadImage(image);
+}
+static void CaptureControls(ViewContext *u, const char *path)
+{
+    CaptureControlsInput(u, path, false);
+}
+
+static void ResourceSelectionChecks(ViewContext *u, bool render)
+{
+    GameState *g = u->g;
+    GameInit(g);
+    g->tick = WINTER_END + 2400;
+    u->menu = u->help = false;
+    u->toastTime = 0;
+    u->speed = 0;
+    ViewSelectBuilding(u, -1);
+    ViewCancelDrag(u);
+    for (int y = 26; y <= 40; y++)
+        for (int x = 26; x <= 40; x++)
+        {
+            Tile *t = &g->tiles[GameTile(x, y)];
+            t->node = t->natural = NODE_NONE;
+            t->amount = t->regrowth = 0;
+        }
+    int tree = GameTile(31, 32), bush = GameTile(34, 32);
+    g->tiles[tree].node = g->tiles[tree].natural = NODE_TREE;
+    g->tiles[tree].amount = 5;
+    g->tiles[bush].node = g->tiles[bush].natural = NODE_BERRIES;
+    g->tiles[bush].amount = 400;
+    u->camera = (Camera2D){.offset = {720, 450}, .target = ViewIso(33, 33), .zoom = 1.8f};
+    Point(u, 31.5f, 32.5f);
+    CHECK(ViewResourceAt(u) == tree);
+    pressedMouse = heldMouse = MOUSE_BUTTON_LEFT;
+    ViewInput(u, .016f);
+    pressedMouse = heldMouse = -1;
+    ViewInput(u, .016f);
+    CHECK(ViewSelectedResource(u) == tree && !u->selectionCount && u->selected < 0);
+    CHECK(ViewSelectionRect(u).width == 520 && ViewProductionRect(u).width == 0);
+    uint64_t hash = GameHash(g);
+    if (render)
+        CaptureControls(u, "evidence/resources-before.png");
+    CHECK(GameHash(g) == hash);
+    // Use the economy owner to produce the actual zero-resource transition.
+    Citizen *c = &g->citizens[0];
+    JobsReset(c);
+    c->role = WOODCUTTER;
+    c->target = tree;
+    c->work = 1000;
+    EconomyGatherWork(g, c);
+    CHECK(g->tiles[tree].node == NODE_NONE && g->tiles[tree].amount == 0);
+    ViewInput(u, .016f);
+    CHECK(ViewSelectedResource(u) == tree && ViewResourceAt(u) == tree);
+    // The old canopy must stop picking the stump; the visible foot remains pickable.
+    Vector2 canopy = ViewIso(31.5f, 32.5f);
+    canopy.y -= 40;
+    u->mouse = GetWorldToScreen2D(canopy, u->camera);
+    Vector2 tile = ViewTileAt(u, u->mouse);
+    u->hoverTile = GameTile(floorf(tile.x), floorf(tile.y));
+    CHECK(ViewResourceAt(u) != tree);
+    g->tiles[bush].amount = 2;
+    c->role = FORAGER;
+    c->target = bush;
+    c->work = 1000;
+    EconomyGatherWork(g, c);
+    CHECK(g->tiles[bush].amount == 0 && g->tiles[bush].node == NODE_BERRIES);
+    Point(u, 34.5f, 32.5f);
+    CHECK(ViewResourceAt(u) == bush);
+    if (render)
+        CaptureControlsInput(u, "evidence/resources-exhausted.png", true);
+    pressedMouse = heldMouse = MOUSE_BUTTON_LEFT;
+    ViewInput(u, .016f);
+    pressedMouse = heldMouse = -1;
+    ViewInput(u, .016f);
+    CHECK(ViewSelectedResource(u) == bush);
+    // An exhausted bush is inspectable, but cannot accept another gather order.
+    u->selection[0] = GameCitizenRef(g, 0);
+    u->selectionCount = 1;
+    u->orderMode = ORDER_GATHER;
+    pressedMouse = MOUSE_BUTTON_LEFT;
+    ViewInput(u, .016f);
+    pressedMouse = -1;
+    CHECK(!u->selectedResource && strstr(u->toast, "depleted"));
+    ViewSelectBuilding(u, -1);
+    u->selectedResource = tree + 1;
+    g->tiles[tree].regrowth = 7;
+    g->tiles[bush].amount = 3;
+    u->toastTime = 0;
+    if (render)
+    {
+        CaptureControlsInput(u, "evidence/resources-regrowing.png", true);
+        g->tick = 0;
+        CaptureControlsInput(u, "evidence/resources-winter.png", true);
+        g->tick = WINTER_END + 2400;
+        u->camera.zoom = .4f;
+        Point(u, 34.5f, 32.5f);
+        CaptureControlsInput(u, "evidence/resources-overview.png", true);
+    }
+    Key(u, KEY_ESCAPE);
+    CHECK(!u->selectedResource && !u->menu);
+    u->selectedResource = tree + 1;
+    ViewSelectBuilding(u, g->factions[0].center);
+    CHECK(!u->selectedResource && ViewSelectedResource(u) == -1);
+    ViewSelectBuilding(u, -1);
+    u->selectedResource = tree + 1;
+    CHECK(ViewSave(u));
+    CHECK(ViewLoad(u, u->savePath) && !u->selectedResource);
+    remove(u->savePath);
+    u->selectedResource = tree + 1;
+    // Occupying cleared land suppresses decorative regrowth without blocking placement.
+    g->tiles[tree].occupied = g->factions[0].center;
+    ViewInput(u, .016f);
+    CHECK(!u->selectedResource && ViewResourceNode(u, tree) == NODE_NONE);
+    GameInit(g);
+    ViewSelectBuilding(u, -1);
+    u->toastTime = 0;
 }
 static void RenderControlChecks(ViewContext *u)
 {
@@ -496,6 +611,8 @@ static void GatherFeedbackChecks(ViewContext *u)
     HudRectClick(u, ViewCommandRect(u, 1));
     u->mouse = GetWorldToScreen2D(canopy, u->camera);
     g->tiles[target].amount = 0;
+    // Depletion replaces the canopy with a stump; click its remaining footprint.
+    Point(u, 25.5f, 30.5f);
     pressedMouse = MOUSE_BUTTON_LEFT;
     ViewInput(u, .016f);
     pressedMouse = -1;
@@ -765,6 +882,7 @@ static void RenderChecks(ViewContext *u)
     BuildFeedbackChecks(u);
     GatherFeedbackChecks(u);
     BuildingEditChecks(u);
+    ResourceSelectionChecks(u, true);
     CursorWindowChecks(u);
     ViewAssetsUnload(u);
     CloseWindow();
@@ -906,7 +1024,10 @@ int main(int argc, char **argv)
     u->camera = (Camera2D){
         .offset = {SCREEN_W / 2.f, (WORLD_TOP + SCREEN_H) / 2.f}, .target = ViewIso(23, 23), .zoom = .86f};
     for (int i = 0; i < 16; i++)
+    {
         u->objects.rect[i] = (Rectangle){0, 0, 64, 64};
+        u->resources.rect[i] = (Rectangle){0, 0, 100, 100};
+    }
     strcpy(u->savePath, argc > 1 ? "hud-view-test.gfv2" : "view-test.gfv2");
     Key(u, KEY_SPACE);
     CHECK(u->speed == 0);
@@ -1116,6 +1237,7 @@ int main(int argc, char **argv)
     CompactSelectionChecks(u);
     ControlChecks(u);
     AnimationChecks(u);
+    ResourceSelectionChecks(u, false);
     if (argc > 1 && !strcmp(argv[1], "--render"))
         RenderChecks(u);
     printf("%d view checks, %d failures\n", checks, failures);

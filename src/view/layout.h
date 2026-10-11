@@ -1,6 +1,7 @@
 #ifndef GREENFIELD_VIEW_LAYOUT_H
 #define GREENFIELD_VIEW_LAYOUT_H
 #include "context.h"
+#include "world.h"
 #include <stddef.h>
 
 // One geometry contract for drawing, picking and controlled input tests.
@@ -29,6 +30,8 @@ static inline Rectangle ViewSelectionRect(const ViewContext *ui)
         int columns = b->owner ? 0 : b->type == HEARTH && b->complete ? 4 : 3;
         return (Rectangle){16, 792, columns ? 292 + columns * 143 : 280, 100};
     }
+    if (ViewSelectedResource(ui) >= 0)
+        return (Rectangle){16, 806, 520, 86};
     return (Rectangle){16, 842, 874, 50};
 }
 static inline Rectangle ViewCommandRect(const ViewContext *ui, int slot)
@@ -73,6 +76,8 @@ static inline Rectangle ViewBuildInfoRect(const ViewContext *ui)
 static inline Rectangle ViewProductionRect(const ViewContext *ui)
 {
     const Building *b = ViewSelectedBuilding(ui);
+    if (ViewSelectedResource(ui) >= 0)
+        return (Rectangle){0};
     if (b && b->queueCount)
         return (Rectangle){304, ViewSelectionRect(ui).y - 54, 12 + b->queueCount * 68, 48};
     int count = 0;

@@ -8,5 +8,7 @@ float ViewSnow(ViewContext *ui);
 Vector2 ViewBuildingVisual(ViewContext *ui, const Building *b, Atlas *atlas, int *index, float *width);
 Rectangle ViewBuildingBounds(ViewContext *ui, const Building *b);
 int ViewResourceAt(const ViewContext *ui);
+int ViewResourceNode(const ViewContext *ui, int tile);
+int ViewSelectedResource(const ViewContext *ui);
 void ViewWorldDraw(ViewContext *ui);
 #endif

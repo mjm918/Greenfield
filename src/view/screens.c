@@ -25,6 +25,7 @@ void ViewMenu(ViewContext *ui)
         {
             GameInit(ui->g);
             ui->selectionCount = 0;
+            ui->selectedResource = 0;
             ui->orderMode = 0;
             ViewCancelDrag(ui);
             ViewCancelBuildingEdit(ui);

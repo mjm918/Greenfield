@@ -21,7 +21,7 @@ typedef struct
 } Atlas;
 typedef struct
 {
-    Atlas objects, people, braids, bronze;
+    Atlas objects, people, braids, bronze, resources;
     Atlas peopleNorth, braidsNorth, peopleJobs, braidsJobs, animals;
     Font font, title;
     RenderTexture2D canvas;
@@ -35,6 +35,7 @@ typedef struct
     double accumulator;
     uint64_t lastAutosave;
     int hoverTile;
+    int selectedResource; // Tile + 1; zero means none. Presentation only.
     EntityRef selection[MAX_CITIZENS], groups[10][MAX_CITIZENS];
     int selectionCount, groupCount[10], selectedGeneration, orderMode;
     bool dragging;

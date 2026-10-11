@@ -265,6 +265,30 @@ static void MiniMap(ViewContext *ui)
     }
 }
 
+void ViewResourceInfo(ViewContext *ui, int tile, Rectangle rect)
+{
+    int node = ViewResourceNode(ui, tile);
+    if (!node)
+        return;
+    const Tile *t = &ui->g->tiles[tile];
+    int resource = node == NODE_TREE ? WOOD : node == NODE_STONE ? STONE : node == NODE_ORE ? ORE : FOOD;
+    const char *name = node == NODE_TREE ? (t->amount ? "Tree" : "Tree stump")
+                       : node == NODE_BERRIES ? "Berry bush"
+                       : node == NODE_GAME ? "Hunting ground"
+                       : node == NODE_STONE ? "Stone deposit" : "Ore deposit";
+    ViewRounded(rect, INK);
+    ViewBorder(rect, Fade(ACCENT, .65f));
+    ViewTitle(ui, TextFormat("%s / %d %s remaining", name, t->amount, RESOURCE_NAMES[resource]),
+              rect.x + 12, rect.y + 10, 19, t->amount ? PAPER : ACCENT);
+    const char *hint = node == NODE_BERRIES || node == NODE_GAME
+                           ? TextFormat("%s / regrows %d food per day",
+                                        t->amount ? "Gather and deliver" : "Exhausted", NATURAL_FOOD_PER_DAY)
+                       : node == NODE_TREE && !t->amount ? "Regrowing; wood returns over several days."
+                       : node == NODE_TREE ? "Harvesting clears the tree when its wood runs out."
+                                           : "Gather and deliver to add to your stockpile.";
+    ViewWrapText(ui, hint, rect.x + 12, rect.y + 39, rect.width - 24, 16, MUTED);
+}
+
 void ViewWorldHUD(ViewContext *ui)
 {
     GameState *g = ui->g;
@@ -297,6 +321,21 @@ void ViewWorldHUD(ViewContext *ui)
         DrawRectangleLinesEx(r, 1, ACCENT);
     }
     MiniMap(ui);
+    if (ui->allowInput && !ui->dragging && !ui->panning && !ui->mapDragging &&
+        ui->build < 0 && !ui->movingBuilding && ViewWorldHit(ui))
+    {
+        int tile = ViewResourceAt(ui);
+        if (tile >= 0 && tile != ViewSelectedResource(ui))
+        {
+            const float width = 390, height = 86;
+            Rectangle r = {Clamp(ui->mouse.x + 18, 8, SCREEN_W - width - 8),
+                           ui->mouse.y + 24, width, height};
+            if (r.y + height > ViewSelectionRect(ui).y - 8)
+                r.y = ui->mouse.y - height - 16;
+            r.y = Clamp(r.y, WORLD_TOP + 4, SCREEN_H - height - 4);
+            ViewResourceInfo(ui, tile, r);
+        }
+    }
     if (ui->orderMode || ui->movingBuilding)
     {
         Rectangle r = ViewOrderHintRect();

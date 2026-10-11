@@ -65,12 +65,45 @@ static bool Visible(const ViewContext *ui, float x, float y, float margin)
     return p.x > -pad && p.x < SCREEN_W + pad && p.y > WORLD_TOP - pad && p.y < SCREEN_H + pad;
 }
 
-static Vector2 ResourceVisual(int tile, int node, int *sprite, float *width)
+int ViewResourceNode(const ViewContext *ui, int tile)
 {
+    if (tile < 0 || tile >= TILE_COUNT || ui->g->tiles[tile].occupied >= 0)
+        return NODE_NONE;
+    const Tile *t = &ui->g->tiles[tile];
+    // Harvested trees retain their natural origin and regrowth timer in the save.
+    return t->node ? t->node : t->natural == NODE_TREE && t->regrowth > 0 ? NODE_TREE : NODE_NONE;
+}
+
+int ViewSelectedResource(const ViewContext *ui)
+{
+    int tile = ui->selectedResource - 1;
+    if (ui->selectionCount || (ui->selected >= 0 && ui->selected < ui->g->buildingCount &&
+                              ui->g->buildings[ui->selected].alive))
+        return -1;
+    return ViewResourceNode(ui, tile) ? tile : -1;
+}
+
+static Vector2 ResourceVisual(const ViewContext *ui, int tile, const Atlas **atlas, int *sprite,
+                              float *width)
+{
+    const Tile *t = &ui->g->tiles[tile];
+    int node = ViewResourceNode(ui, tile);
     Vector2 foot = ViewIso(tile % MAP_SIZE + .5f, tile / MAP_SIZE + .5f);
     foot.y += 8;
+    *atlas = &ui->objects;
     *sprite = node == NODE_TREE ? 12 : (node == NODE_STONE || node == NODE_ORE) ? 13 : 14;
     *width = node == NODE_TREE ? 64 : 50;
+    if (node == NODE_TREE && t->amount == 0)
+    {
+        *atlas = &ui->resources;
+        *sprite = t->regrowth >= 7 ? 3 : 0;
+        *width = t->regrowth >= 7 ? 30 : 24;
+    }
+    else if (node == NODE_BERRIES && t->amount <= NATURAL_FOOD_CAPACITY / 2)
+    {
+        *atlas = &ui->resources;
+        *sprite = t->amount > 0 ? 2 : 1;
+    }
     return foot;
 }
 
@@ -83,13 +116,14 @@ int ViewResourceAt(const ViewContext *ui)
     int best = -1, depth = -1;
     for (int t = 0; t < TILE_COUNT; t++)
     {
-        const Tile *tile = &ui->g->tiles[t];
-        if (!tile->node || tile->node == NODE_GAME)
+        int node = ViewResourceNode(ui, t);
+        if (!node || node == NODE_GAME || !Visible(ui, t % MAP_SIZE + .5f, t / MAP_SIZE + .5f, 150))
             continue;
         int sprite, d = t % MAP_SIZE + t / MAP_SIZE;
         float width;
-        Vector2 foot = ResourceVisual(t, tile->node, &sprite, &width);
-        Rectangle src = ui->objects.rect[sprite];
+        const Atlas *atlas;
+        Vector2 foot = ResourceVisual(ui, t, &atlas, &sprite, &width);
+        Rectangle src = atlas->rect[sprite];
         if (src.width <= 0)
             continue;
         float height = width * src.height / src.width;
@@ -102,7 +136,7 @@ int ViewResourceAt(const ViewContext *ui)
     }
     if (best >= 0)
         return best;
-    return ui->hoverTile >= 0 && ui->g->tiles[ui->hoverTile].node ? ui->hoverTile : -1;
+    return ViewResourceNode(ui, ui->hoverTile) ? ui->hoverTile : -1;
 }
 
 static void TerrainDraw(ViewContext *ui)
@@ -454,7 +488,7 @@ void ViewWorldDraw(ViewContext *ui)
     DrawItem items[TILE_COUNT + MAX_BUILDINGS + MAX_CITIZENS + MAX_WILDLIFE + 4];
     int count = 0;
     for (int t = 0; t < TILE_COUNT; t++)
-        if (g->tiles[t].node && g->tiles[t].node != NODE_GAME &&
+        if (ViewResourceNode(ui, t) && ViewResourceNode(ui, t) != NODE_GAME &&
             Visible(ui, t % MAP_SIZE + .5f, t / MAP_SIZE + .5f, 150))
             items[count++] = (DrawItem){0, t, (float)(t % MAP_SIZE + t / MAP_SIZE) + 1};
     for (int i = 0; i < g->buildingCount; i++)
@@ -486,7 +520,8 @@ void ViewWorldDraw(ViewContext *ui)
         {
             foot = ViewIso(item.id % MAP_SIZE + .5f, item.id / MAP_SIZE + .5f);
             foot.y += 8;
-            width = g->tiles[item.id].node == NODE_TREE ? 18 : 14;
+            width = ViewResourceNode(ui, item.id) == NODE_TREE
+                        ? (g->tiles[item.id].amount > 0 ? 18 : 8) : 14;
             height = width / 3;
         }
         else if (item.kind == 1)
@@ -527,11 +562,12 @@ void ViewWorldDraw(ViewContext *ui)
             Tile *t = &g->tiles[item.id];
             int sprite;
             float width;
-            Vector2 foot = ResourceVisual(item.id, t->node, &sprite, &width);
+            const Atlas *atlas;
+            Vector2 foot = ResourceVisual(ui, item.id, &atlas, &sprite, &width);
             Color tint = t->node == NODE_ORE    ? (Color){204, 142, 84, 255}
                          : t->node == NODE_TREE ? ViewMix(WHITE, (Color){194, 218, 207, 255}, snow * .7f)
                                                 : WHITE;
-            ViewSprite(ui->objects, sprite, foot, width, tint, false);
+            ViewSprite(*atlas, sprite, foot, width, tint, false);
             if (snow > .1f && t->node == NODE_STONE)
                 DrawEllipse((int)(foot.x - 4), (int)(foot.y - 18), 13, 4,
                             Fade((Color){236, 240, 223, 255}, snow * .9f));
@@ -555,16 +591,15 @@ void ViewWorldDraw(ViewContext *ui)
         DrawCircleV(p, 5, ACCENT);
     }
     SelectionDraw(ui);
+    int resource = ViewSelectedResource(ui);
     if (ui->orderMode == ORDER_GATHER && ViewWorldHit(ui))
+        resource = ViewResourceAt(ui);
+    if (resource >= 0)
     {
-        int resource = ViewResourceAt(ui);
-        if (resource >= 0)
-        {
-            int x = resource % MAP_SIZE, y = resource / MAP_SIZE;
-            DiamondLine(x, y, 1, 1, INK, 7 / ui->camera.zoom);
-            DiamondLine(x, y, 1, 1, PAPER, 4 / ui->camera.zoom);
-            DiamondLine(x, y, 1, 1, ACCENT, 2 / ui->camera.zoom);
-        }
+        int x = resource % MAP_SIZE, y = resource / MAP_SIZE;
+        DiamondLine(x, y, 1, 1, INK, 7 / ui->camera.zoom);
+        DiamondLine(x, y, 1, 1, PAPER, 4 / ui->camera.zoom);
+        DiamondLine(x, y, 1, 1, ACCENT, 2 / ui->camera.zoom);
     }
     if (ui->areaRole >= 0 && ui->hoverTile >= 0)
     {

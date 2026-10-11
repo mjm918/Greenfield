@@ -70,6 +70,7 @@ void ViewSprite(Atlas a, int index, Vector2 foot, float width, Color tint, bool 
 bool ViewAssetsLoad(ViewContext *ui)
 {
     ui->objects = LoadAtlas("settlement-atlas.png", 4);
+    ui->resources = LoadAtlas("resource-states-atlas.png", 2);
     ui->people = LoadAtlas("citizen-atlas.png", 4);
     ui->braids = LoadAtlas("citizen-braids-atlas.png", 4);
     ui->bronze = LoadAtlas("bronze-atlas.png", 2);
@@ -87,7 +88,8 @@ bool ViewAssetsLoad(ViewContext *ui)
     ui->title = LoadFontEx(fontPath, 96, NULL, 0);
     SetTextureFilter(ui->font.texture, TEXTURE_FILTER_BILINEAR);
     SetTextureFilter(ui->title.texture, TEXTURE_FILTER_BILINEAR);
-    return ui->peopleNorth.texture.id && ui->braidsNorth.texture.id && ui->peopleJobs.texture.id &&
+    return ui->resources.texture.id && ui->peopleNorth.texture.id && ui->braidsNorth.texture.id &&
+           ui->peopleJobs.texture.id &&
            ui->braidsJobs.texture.id && ui->animals.texture.id && ui->bronze.texture.id &&
            ui->objects.texture.id && ui->people.texture.id && ui->braids.texture.id && ui->canvas.id &&
            ui->font.texture.id != GetFontDefault().texture.id &&
@@ -96,6 +98,7 @@ bool ViewAssetsLoad(ViewContext *ui)
 
 void ViewAssetsUnload(ViewContext *ui)
 {
+    UnloadTexture(ui->resources.texture);
     UnloadTexture(ui->bronze.texture);
     UnloadTexture(ui->objects.texture);
     UnloadTexture(ui->people.texture);
